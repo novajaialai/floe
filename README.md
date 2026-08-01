@@ -4,12 +4,15 @@
 
 Floe is an open replication of the capability behind commercial AI browsers (Polar, etc.): long-horizon browser automation on your own accounts, with no credits, no billing, and no cloud dependency.
 
-## Status: v0.1 engine (early)
+## Status: v0.2 engine (early)
+
+**What's new in v0.2** — extraction stopped being the model's job. `extract_table` finds the page's dominant repeated structure (a regular table, or listing cards / feed items / search results, segmented by repeated markers) with pure DOM heuristics, and `paginate_extract` walks pagination writing deduped rows straight to a CSV in code. On the Hacker News 3-page benchmark that took the run from 15 steps of hand-transcribed rows to **4 steps, 90 rows, zero duplicates**. Element ids are also sticky now, so an id stays glued to its element across snapshots instead of being reassigned from 0 (the stale-click bug in v0.1).
 
 Working today:
 - Persistent Chromium profile (log in once; sessions persist across tasks)
-- Agent loop with indexed-element page snapshots (a11y-style: numbered interactive elements + page text)
-- Tools: navigate, read_page, click, type_text, press_key, scroll, tabs, workspace files, done
+- Agent loop with indexed-element page snapshots (a11y-style: numbered interactive elements + page text), with **stable element ids** across re-renders
+- Structured extraction with no model call: `extract_table` (tables + repeated cards), `paginate_extract` (multi-page scrape → CSV, code-side dedupe on a key column, auto "next"/"more"/infinite-scroll advance)
+- Tools: navigate, read_page, click, type_text, press_key, scroll, tabs, extract_table, paginate_extract, workspace files, done
 - Per-task workspace (notes, incremental CSVs) so long tasks survive interruptions
 - Providers: Anthropic Messages API, any OpenAI-compatible endpoint, and a **prompt-protocol tool mode** (`FLOE_TOOL_MODE=prompt`) that gets tool-calling out of endpoints with no function-calling support
 - Context trimming of stale snapshots so multi-hour tasks don't blow the window
@@ -31,6 +34,14 @@ node packages/cli/dist/main.js run "..."
 export FLOE_TOOL_MODE=prompt
 ```
 
+Model-free check of the browser/extraction layer (no API calls, launches headless Chrome):
+
+```bash
+node scripts/smoke-extract.mjs
+```
+
+Verified against Hacker News (3 pages → 90 deduped rows), a Wikipedia sortable table, quotes.toscrape.com, books.toscrape.com and lite.cnn.com. Logged-in templates (LinkedIn-style) are **untested** — the default profile has no accounts in it.
+
 First run launches Chrome with a fresh profile at `~/.floe/profile` — log into the sites you want Floe to work in, then hand it tasks. Results land in `~/.floe/workspaces/<task-id>/`.
 
 ## Architecture
@@ -49,7 +60,7 @@ Design notes:
 ## Roadmap
 
 1. ✅ Engine skeleton: end-to-end tasks over CDP
-2. Site-hardened tools: Google Sheets writer, list paginator with dedupe, generic extractor; stable element ids across snapshots
+2. ✅ Reliability tools: generic structured extractor, list paginator with code-side dedupe, stable element ids (Google Sheets writer still to come)
 3. Orchestrator/executor split + parallel windows
 4. Scheduler: saved workflows on cron ("morning briefing at 7am")
 5. Desktop app (Tauri): command bar, live view, pause/take-over

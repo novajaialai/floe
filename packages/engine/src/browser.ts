@@ -1,11 +1,19 @@
 import { chromium, type BrowserContext, type Page } from "playwright-core";
+import { EXTRACT_SCRIPT, FIND_NEXT_SCRIPT, type ExtractedTable } from "./extract.js";
 
 /**
  * Injected into the page to index interactive elements. Each gets a
  * data-floe-id so the agent can act on stable short ids instead of selectors.
+ *
+ * Ids are *sticky*: an element keeps the id it was first given for as long as
+ * it stays in the DOM, so an id the model saw in an earlier snapshot still
+ * points at the same element after a re-render. The counter lives on `window`,
+ * so it resets naturally on a real navigation (fresh document) and only ever
+ * hands out fresh ids to newly-seen elements.
  */
 const INDEX_SCRIPT = `(() => {
   const SELECTOR = 'a[href], button, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="menuitem"], [role="option"], [role="checkbox"], [role="combobox"], [contenteditable="true"], [onclick]';
+  if (typeof window.__floeNextId !== 'number') window.__floeNextId = 0;
   const els = Array.from(document.querySelectorAll(SELECTOR));
   const visible = els.filter((el) => {
     const r = el.getBoundingClientRect();
@@ -13,8 +21,15 @@ const INDEX_SCRIPT = `(() => {
     return r.width > 0 && r.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
   });
   const out = [];
-  visible.forEach((el, i) => {
-    el.setAttribute('data-floe-id', String(i));
+  const seen = new Set();
+  visible.forEach((el) => {
+    let id = el.getAttribute('data-floe-id');
+    if (id === null || seen.has(id)) {
+      id = String(window.__floeNextId++);
+      el.setAttribute('data-floe-id', id);
+    }
+    seen.add(id);
+    const i = Number(id);
     const r = el.getBoundingClientRect();
     const label = (
       el.getAttribute('aria-label') ||
@@ -108,15 +123,25 @@ export class FloeBrowser {
     return this.activePage.locator(`[data-floe-id="${elementId}"]`).first();
   }
 
-  async click(elementId: number): Promise<void> {
+  private async requireElement(elementId: number) {
     const loc = this.locator(elementId);
+    if ((await loc.count()) === 0) {
+      throw new Error(
+        `Element [${elementId}] is no longer on the page (navigated or re-rendered). Call read_page and use an id from the fresh snapshot.`,
+      );
+    }
+    return loc;
+  }
+
+  async click(elementId: number): Promise<void> {
+    const loc = await this.requireElement(elementId);
     await loc.scrollIntoViewIfNeeded({ timeout: 5_000 }).catch(() => {});
     await loc.click({ timeout: 10_000 });
     await this.settle();
   }
 
   async type(elementId: number, text: string, submit = false): Promise<void> {
-    const loc = this.locator(elementId);
+    const loc = await this.requireElement(elementId);
     await loc.click({ timeout: 10_000 });
     await loc.fill("").catch(() => {});
     await loc.pressSequentially(text, { delay: 20 });
@@ -136,6 +161,37 @@ export class FloeBrowser {
       `scrollBy({ top: ${direction === "down" ? "" : "-"}Math.round(innerHeight * ${amount}), behavior: 'instant' })`,
     );
     await this.activePage.waitForTimeout(300);
+  }
+
+  /** Code-side structured extraction of the page's dominant repeated structure. */
+  async extractTable(): Promise<ExtractedTable> {
+    return (await this.activePage.evaluate(EXTRACT_SCRIPT)) as ExtractedTable;
+  }
+
+  /**
+   * Advance one "page" of a list. auto = click the detected next/more control;
+   * scroll = infinite-feed scroll to the bottom and wait for growth.
+   */
+  async advancePage(mode: "auto" | "scroll" = "auto"): Promise<{ ok: boolean; detail: string }> {
+    const before = this.activePage.url();
+    if (mode === "scroll") {
+      const height = () => this.activePage.evaluate("document.body.scrollHeight") as Promise<number>;
+      const h0 = await height();
+      await this.activePage.evaluate("scrollTo({ top: document.body.scrollHeight, behavior: 'instant' })");
+      for (let i = 0; i < 12; i++) {
+        await this.activePage.waitForTimeout(500);
+        if ((await height()) > h0) return { ok: true, detail: "scrolled; new content loaded" };
+      }
+      return { ok: false, detail: "scrolled to bottom but no new content loaded" };
+    }
+    const found = (await this.activePage.evaluate(FIND_NEXT_SCRIPT)) as { text: string; href: string } | null;
+    if (!found) return { ok: false, detail: "no next/more control found on the page" };
+    const loc = this.activePage.locator("[data-floe-next]").first();
+    await loc.scrollIntoViewIfNeeded({ timeout: 5_000 }).catch(() => {});
+    await loc.click({ timeout: 15_000 });
+    await this.settle();
+    const after = this.activePage.url();
+    return { ok: true, detail: `clicked "${found.text}"${after !== before ? ` -> ${after}` : " (same URL; content updated in place)"}` };
   }
 
   async screenshot(): Promise<Buffer> {

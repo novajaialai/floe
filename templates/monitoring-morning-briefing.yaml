@@ -1,0 +1,12 @@
+name: Morning briefing from your open tabs
+category: monitoring
+integrations: [any-logged-in-site]
+schedule: "0 7 * * *"
+prompt: |
+  Visit each of these sites in my logged-in profile: {sites}. For each,
+  collect what is new since yesterday (unread items, new posts, changed
+  numbers — whatever the site surfaces). Write briefing.md with three
+  sections: NEEDS ACTION NOW, TODAY, FYI — one line per item with the
+  source site. Be selective: max 15 items total.
+inputs:
+  - sites

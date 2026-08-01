@@ -1,0 +1,15 @@
+name: Deep-dive a product category into a market map
+category: research
+integrations: [web]
+schedule: null
+prompt: |
+  Research the {category} market. Find the main vendors (aim for {count}
+  companies) by browsing comparison pages, review sites, and vendor sites.
+  For each vendor, visit their site and record in vendors.csv: name, URL,
+  one-line positioning, pricing model (and entry price if published), and
+  target customer. Keep running notes with sources in notes.md. Finish with
+  a market-map.md report: a comparison table plus 3 paragraphs of synthesis
+  (segments, pricing patterns, gaps).
+inputs:
+  - category
+  - count

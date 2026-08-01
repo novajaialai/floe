@@ -1,0 +1,13 @@
+name: Scrape a directory into a spreadsheet
+category: data
+integrations: [any-directory-site]
+schedule: null
+prompt: |
+  Go to {directory_url}. Page through every listing page (follow pagination or
+  "load more" until exhausted). For every entry, extract: name, and every other
+  field the listing shows (address, phone, website, category...). Append each
+  entry as a row to results.csv as you go — write incrementally, never in one
+  batch at the end. Deduplicate by name. When done, report the total count and
+  any pages that failed to load.
+inputs:
+  - directory_url

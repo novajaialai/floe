@@ -22,6 +22,8 @@ export interface ToolRuntime {
   session: BrowserSession;
   workspace: Workspace;
   spawn?: SpawnFn;
+  /** Agent label stamped on write receipts ("main", or the executor name). */
+  label?: string;
 }
 
 type Handler = (rt: ToolRuntime, input: any) => Promise<string>;
@@ -37,27 +39,55 @@ function obj(props: Record<string, unknown>, required: string[]): Record<string,
   return { type: "object", properties: props, required };
 }
 
+/** Dense pages can list hundreds of in-viewport elements — cap what one snapshot renders. */
+const MAX_LISTED_ELEMENTS = 120;
+/** Above this DOM size the auto structure-hint extraction pass is skipped (cost). */
+const HINT_NODE_BUDGET = 8_000;
+
 async function describePage(rt: ToolRuntime): Promise<string> {
   const s = await rt.session.snapshot();
-  const t = await rt.session.extractTable().catch(() => null);
+  // The hint costs a full in-page extraction pass — skip it on very dense
+  // pages; the model can still call extract_table explicitly.
+  const t = (s.nodeCount ?? 0) > HINT_NODE_BUDGET ? null : await rt.session.extractTable().catch(() => null);
   const hint =
     t && t.rows.length >= 5
       ? `\n[!] ${t.rows.length} repeated records detected on this page (${t.source}). Use extract_table / paginate_extract for them — the page text below is truncated and must not be used to transcribe rows.`
       : "";
-  const els = s.elements
-    .filter((e) => e.inViewport)
+  const warnings: string[] = [];
+  const nav = rt.session.lastNav;
+  const bare = (u: string) => u.replace(/^[a-z]+:\/\//i, "").replace(/^www\./, "").replace(/\/$/, "");
+  if (nav && nav.finalUrl === s.url) {
+    if (nav.status >= 400)
+      warnings.push(
+        `[!] HTTP ${nav.status} — this is an ERROR page, not real content. Do not extract results from it; check the URL or try another source.`,
+      );
+    if (bare(nav.requested) !== bare(s.url)) warnings.push(`[!] Redirected: requested ${nav.requested} but landed on ${s.url}.`);
+  }
+  if (s.blocker)
+    warnings.push(
+      `[!] A dialog/overlay is open: "${s.blocker}". It may block every other click — dismiss it first (its Accept/Close button, or press_key Escape).`,
+    );
+  for (const f of s.iframes ?? []) warnings.push(`[!] ${f}`);
+  const inView = s.elements.filter((e) => e.inViewport);
+  const shown = inView.slice(0, MAX_LISTED_ELEMENTS);
+  const els = shown
     .map((e) => `[${e.id}] <${e.tag}${e.type ? ` type=${e.type}` : ""}${e.role ? ` role=${e.role}` : ""}> ${e.label}${e.href ? ` -> ${e.href}` : ""}`)
     .join("\n");
-  const offscreen = s.elements.filter((e) => !e.inViewport).length;
+  const offscreen = s.elements.length - inView.length;
+  const unlisted = inView.length - shown.length;
   return [
     `URL: ${s.url}`,
     `Title: ${s.title}`,
     `Scroll: ${s.scroll.y}/${s.scroll.maxY}px${hint}`,
+    ...warnings,
     `\n--- INTERACTIVE ELEMENTS (in viewport; ${offscreen} more offscreen — scroll to reveal) ---`,
     els || "(none in viewport)",
+    unlisted > 0 ? `(+${unlisted} more interactive elements in viewport not listed — dense page; use what is shown, or extract_table for lists)` : "",
     `\n--- PAGE TEXT (truncated) ---`,
     s.text,
-  ].join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 interface ColumnSpec {
@@ -65,14 +95,20 @@ interface ColumnSpec {
   cell?: number;
   pattern?: string;
   link?: "href" | "text";
-  value?: string;
+  /** Which of the row's links to use (default 0 — the first). */
+  link_index?: number;
+  /** Regex over link text; the first matching link wins (beats link_index). */
+  link_match?: string;
 }
 
 /** Pull one column's value out of an extracted row, code-side. */
 function columnValue(row: ExtractedRow, spec: ColumnSpec): string {
-  if (spec.value !== undefined) return spec.value;
   if (spec.link) {
-    const l = row.links[0];
+    let l = row.links[spec.link_index ?? 0];
+    if (spec.link_match) {
+      const re = new RegExp(spec.link_match, "i");
+      l = row.links.find((x) => re.test(x.text)) ?? l;
+    }
     return l ? (spec.link === "href" ? l.href : l.text) : "";
   }
   if (spec.pattern) {
@@ -83,12 +119,41 @@ function columnValue(row: ExtractedRow, spec: ColumnSpec): string {
   return "";
 }
 
+/**
+ * Every column must be extracted FROM the page — exactly one of cell/pattern/
+ * link. Anything else (e.g. a constant "value") would let fabricated columns
+ * flow through a legitimate tool with perfect receipts.
+ */
+function validateColumns(specs: ColumnSpec[]): string | null {
+  for (const c of specs) {
+    const modes = ["cell", "pattern", "link"].filter((k) => (c as any)[k] !== undefined);
+    if (modes.length !== 1)
+      return `ERROR: column "${c.name}" must define exactly one of "cell", "pattern" or "link" (got: ${modes.join(", ") || "none"}). Constant or invented values are not allowed — every column must be extracted from the page.`;
+  }
+  return null;
+}
+
+/** "rows have 4-7 cells" — the tell that cell indices shift on some rows. */
+function cellSpread(rows: ExtractedRow[]): { min: number; max: number } {
+  let min = Infinity, max = 0;
+  for (const r of rows) {
+    if (r.cells.length < min) min = r.cells.length;
+    if (r.cells.length > max) max = r.cells.length;
+  }
+  return { min: rows.length ? min : 0, max };
+}
+
 function renderTable(t: ExtractedTable, maxRows: number): string {
   if (t.kind === "none" || !t.rows.length) return "No repeated structure detected on this page.";
+  const spread = cellSpread(t.rows);
   const head = [
     `Structure: ${t.kind} (${t.source}) — ${t.rows.length} rows detected`,
     t.columns ? `Header: ${t.columns.map((c, i) => `[${i}]${c}`).join(" | ")}` : `Cells are numbered [0..n] per row.`,
   ];
+  if (spread.min !== spread.max)
+    head.push(
+      `[!] Rows have ${spread.min}-${spread.max} cells — optional fields shift the cell indices on some rows, so "cell" mappings are UNRELIABLE for anything after the shift; prefer "pattern" (regex) columns for fields that can be missing.`,
+    );
   const body = t.rows.slice(0, maxRows).map((r, i) => {
     const cells = r.cells.map((c, j) => `[${j}]${c}`).join(" | ");
     const link = r.links[0] ? `  ->${r.links[0].href}` : "";
@@ -206,7 +271,7 @@ export const TOOLS: RegisteredTool[] = [
     def: {
       name: "paginate_extract",
       description:
-        "Scrape a paginated list into a CSV, deduped. Per page it extracts the repeated structure (same detector as extract_table), maps it to your columns, appends only rows whose key column is new (dedupe is done in code against the whole CSV), then advances to the next page. Call extract_table first to see the cell numbering. Each column is defined by exactly one of: cell (cell index), pattern (regex over the row's full text; capture group 1 is used), or link ('href'/'text' of the row's first link).",
+        "Scrape a paginated list into a CSV, deduped. Per page it extracts the repeated structure (same detector as extract_table), maps it to your columns, appends only rows whose key column is new (dedupe is done in code against the whole CSV), then advances to the next page. Call extract_table first to see the cell numbering. Each column is defined by exactly one of: cell (cell index), pattern (regex over the row's full text; capture group 1 is used), or link ('href'/'text' of one of the row's links — add link_match (regex over link text) or link_index (nth link) when the first link is not the one you want, e.g. the title link rather than the author link).",
       parameters: obj(
         {
           csv: { type: "string", description: "Workspace CSV file name, e.g. results.csv" },
@@ -219,6 +284,8 @@ export const TOOLS: RegisteredTool[] = [
                 cell: { type: "number" },
                 pattern: { type: "string" },
                 link: { type: "string", enum: ["href", "text"] },
+                link_index: { type: "number", description: "Use the nth link of the row (default 0)" },
+                link_match: { type: "string", description: "Regex over link text; first matching link wins" },
               },
               ["name"],
             ),
@@ -233,13 +300,15 @@ export const TOOLS: RegisteredTool[] = [
     },
     handler: async (rt, i) => {
       const specs: ColumnSpec[] = i.columns;
+      const invalid = validateColumns(specs);
+      if (invalid) return invalid;
       const names = specs.map((c) => c.name);
       const key = i.key && names.includes(i.key) ? i.key : names[0];
       const pages = Math.min(Math.max(1, i.max_pages ?? 1), 20);
       const mode = (i.next ?? "auto") as "auto" | "scroll" | "none";
       const filter = i.require ? new RegExp(i.require, "i") : null;
       const log: string[] = [];
-      let totals = { added: 0, skipped: 0, total: 0 };
+      let totals = { added: 0, dup: 0, empty: 0, total: 0 };
       let sample = "";
 
       for (let p = 1; p <= pages; p++) {
@@ -247,9 +316,18 @@ export const TOOLS: RegisteredTool[] = [
         const rows = table.rows
           .filter((r) => !filter || filter.test(r.text))
           .map((r) => specs.map((s) => columnValue(r, s)));
-        const res = rt.workspace.appendCsvDeduped(i.csv, names, rows, key);
-        totals = { added: totals.added + res.added, skipped: totals.skipped + res.skipped, total: res.total };
-        log.push(`page ${p} (${rt.session.page.url()}): detected ${table.rows.length} rows [${table.kind}: ${table.source}] → +${res.added} new, ${res.skipped} dup/empty`);
+        const res = rt.workspace.appendCsvDeduped(i.csv, names, rows, key, { tool: "paginate_extract", agent: rt.label });
+        totals = {
+          added: totals.added + res.added,
+          dup: totals.dup + res.dupSkipped,
+          empty: totals.empty + res.emptyKeySkipped,
+          total: res.total,
+        };
+        const spread = cellSpread(table.rows);
+        const spreadNote = spread.min !== spread.max ? ` (cells ${spread.min}-${spread.max} — cell indices shift; prefer pattern columns)` : "";
+        log.push(
+          `page ${p} (${rt.session.page.url()}): detected ${table.rows.length} rows [${table.kind}: ${table.source}]${spreadNote} → +${res.added} new, ${res.dupSkipped} duplicate, ${res.emptyKeySkipped} empty-key`,
+        );
         if (!sample && res.added) {
           const shown = rows.slice(0, 3).map((r) => r.map((c, j) => `${names[j]}=${c}`).join(" | "));
           sample = `Sample rows written:\n${shown.join("\n")}`;
@@ -260,10 +338,13 @@ export const TOOLS: RegisteredTool[] = [
         if (!adv.ok) break;
       }
       return [
-        `CSV ${i.csv}: +${totals.added} new rows this call, ${totals.skipped} skipped as duplicate/empty, ${totals.total} total rows in file.`,
+        `CSV ${i.csv}: +${totals.added} new rows this call, ${totals.dup + totals.empty} skipped (${totals.dup} duplicate / ${totals.empty} empty-key), ${totals.total} total rows in file.`,
         `Columns: ${names.join(", ")} (dedupe key: ${key})`,
         ...log,
         sample,
+        totals.empty > 0 && totals.empty > totals.dup
+          ? `WARNING: ${totals.empty} rows had an EMPTY "${key}" key — the key column mapping is extracting NOTHING for them. Fix the cell/pattern for "${key}" (check with extract_table); this is not normal dedupe.`
+          : "",
         totals.added === 0
           ? "WARNING: nothing new was written. Check the column mapping with extract_table, or the pagination may be exhausted."
           : "",
@@ -283,8 +364,9 @@ export const TOOLS: RegisteredTool[] = [
       ),
     },
     handler: async (rt, i) => {
-      if ((i.mode ?? "overwrite") === "append") rt.workspace.append(i.name, i.content);
-      else rt.workspace.write(i.name, i.content);
+      const meta = { tool: "workspace_write", agent: rt.label };
+      if ((i.mode ?? "overwrite") === "append") rt.workspace.append(i.name, i.content, meta);
+      else rt.workspace.write(i.name, i.content, meta);
       return `Wrote ${i.name} (${i.content.length} chars). Files: ${rt.workspace.list().join(", ")}`;
     },
   },

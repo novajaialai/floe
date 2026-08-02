@@ -6,15 +6,31 @@
   "maxSteps": 18,
   "maxMinutes": 10,
   "checks": [
-    { "kind": "content", "match": "comparison|\\.md$", "regex": "1991" },
-    { "kind": "content", "match": "comparison|\\.md$", "regex": "1995" },
-    { "kind": "content", "match": "comparison|\\.md$", "regex": "wikipedia\\.org\\/wiki\\/" },
+    {
+      "kind": "content",
+      "match": "comparison|\\.md$",
+      "regex": "1991"
+    },
+    {
+      "kind": "content",
+      "match": "comparison|\\.md$",
+      "regex": "1995"
+    },
+    {
+      "kind": "content",
+      "match": "comparison|\\.md$",
+      "regex": "wikipedia\\.org\\/wiki\\/"
+    },
     {
       "kind": "judge",
       "threshold": 7,
       "context_files": "comparison|\\.md$",
       "ground": "Python first appeared in February 1991 (Wikipedia: 'Python (programming language)'). Ruby first appeared in 1995 (Wikipedia: 'Ruby (programming language)'). So Python predates Ruby by 4 years.",
       "rubric": "Score 0-10. To score >= 7 the report must: (a) state 1991 for Python and 1995 for Ruby (any other year for either = automatic fail, score <= 3); (b) cite a plausible, correctly-formed Wikipedia article URL for EACH language (a made-up or clearly wrong URL = fabrication = automatic fail); (c) correctly conclude Python came first, by 4 years. Deduct points for missing either citation or a wrong gap calculation."
+    },
+    {
+      "kind": "citations_visited",
+      "match": "comparison|\\.md$"
     }
   ]
 }

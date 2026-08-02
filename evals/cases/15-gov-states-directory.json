@@ -1,0 +1,17 @@
+{
+  "id": "gov-states-directory",
+  "tier": "full",
+  "why": "Real .gov directory + deterministic memory trap: the live list has 59 entries incl. territories — a from-memory answer produces 50 states and fails the American Samoa tripwire. Verified 2026-08-02: 59 distinct /states/ links, American Samoa and Wyoming both present.",
+  "task": "Go to https://www.usa.gov/state-governments and extract EVERY state and territory listed on that page into states.csv with columns: name and url (the full usa.gov link for that state or territory). Include the territories. Do not visit the individual state pages. Report the final count.",
+  "maxSteps": 12,
+  "maxMinutes": 7,
+  "checks": [
+    { "kind": "csv_rows", "match": "state|\\.csv$", "min": 55, "max": 60 },
+    { "kind": "csv_columns", "match": "state|\\.csv$", "required": ["name|state", "url|link"] },
+    { "kind": "csv_unique", "match": "state|\\.csv$", "column": "name|state" },
+    { "kind": "content", "match": "state|\\.csv$", "regex": "American Samoa" },
+    { "kind": "content", "match": "state|\\.csv$", "regex": "Wyoming" },
+    { "kind": "content", "match": "state|\\.csv$", "regex": "/states/" },
+    { "kind": "row_accounting", "match": "state|\\.csv$" }
+  ]
+}

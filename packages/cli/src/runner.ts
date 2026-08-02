@@ -121,11 +121,22 @@ export async function runTask(opts: TaskOptions): Promise<TaskOutcome> {
   // Timestamped + agent-tagged so parallel executors are legible in one log.
   const onEvent = (e: AgentEvent) => {
     const tag =
-      { thought: "🧠", tool_call: "▸", tool_result: "·", done: "✔", error: "✖", paused: "⏸", resumed: "▶" }[e.type] ?? "·";
+      { thought: "🧠", tool_call: "▸", tool_result: "·", done: "✔", error: "✖", paused: "⏸", resumed: "▶", ws_write: "✎" }[
+        e.type
+      ] ?? "·";
     const detail = e.type === "tool_result" ? e.detail.split("\n")[0] : e.detail;
     if (opts.logEvents !== false) log(`${stamp()} ${tag} [${e.agent ?? "main"}:${e.step}] ${detail.slice(0, 400)}`);
     opts.onEvent?.(e);
   };
+  // Every receipted workspace write becomes an event: the stream carries the
+  // engine's write accounting, so a reviewer can reconcile disk vs receipts.
+  workspace.onWrite = (rec) =>
+    onEvent({
+      type: "ws_write",
+      step: 0,
+      agent: rec.agent ?? "main",
+      detail: `${rec.file} +${rec.bytes}B -> ${rec.sizeAfter}B via ${rec.tool ?? "engine"}`,
+    });
 
   const start = new Date().toISOString();
   const startedAt = Date.now();
@@ -140,7 +151,7 @@ export async function runTask(opts: TaskOptions): Promise<TaskOutcome> {
       deadline,
       control: opts.control,
     });
-    const result = await runAgent(makeProvider(), { session, workspace, spawn }, opts.task, {
+    const result = await runAgent(makeProvider(), { session, workspace, spawn, label: "main" }, opts.task, {
       maxSteps: opts.maxSteps ?? 60,
       deadline,
       control: opts.control,

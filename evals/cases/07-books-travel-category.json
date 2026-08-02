@@ -6,7 +6,22 @@
   "maxSteps": 15,
   "maxMinutes": 9,
   "checks": [
-    { "kind": "csv_rows", "match": "\\.csv$", "exact": 11 },
-    { "kind": "csv_columns", "match": "\\.csv$", "required": ["title", "price"] }
+    {
+      "kind": "csv_rows",
+      "match": "\\.csv$",
+      "exact": 11
+    },
+    {
+      "kind": "csv_columns",
+      "match": "\\.csv$",
+      "required": [
+        "title",
+        "price"
+      ]
+    },
+    {
+      "kind": "row_accounting",
+      "match": "\\.csv$"
+    }
   ]
 }

@@ -6,7 +6,19 @@
   "maxSteps": 25,
   "maxMinutes": 14,
   "checks": [
-    { "kind": "csv_rows", "match": "\\.csv$", "exact": 100 },
-    { "kind": "csv_unique", "match": "\\.csv$", "column": "text|quote" }
+    {
+      "kind": "csv_rows",
+      "match": "\\.csv$",
+      "exact": 100
+    },
+    {
+      "kind": "csv_unique",
+      "match": "\\.csv$",
+      "column": "text|quote"
+    },
+    {
+      "kind": "row_accounting",
+      "match": "\\.csv$"
+    }
   ]
 }

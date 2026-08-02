@@ -1,0 +1,15 @@
+{
+  "id": "hn-jobs-sheet",
+  "tier": "full",
+  "why": "Real-work prospect sheet: two live pages of HN /jobs into a deduped CSV keyed on the unique item?id link. Live content varies, so bounds (55..60) not exact. Verified 2026-08-02: 30 rows/page, 60 distinct item ids across pages 1-2, morelink rel=next present.",
+  "task": "Go to https://news.ycombinator.com/jobs and collect the job postings from the FIRST TWO pages only (click 'More' exactly once) into jobs.csv with columns: title, link (the posting's Hacker News discussion URL — the href of the 'X hours ago' timestamp link, containing item?id=), and age (the 'X hours/days ago' text). Deduplicate on link. Report the final row count.",
+  "maxSteps": 16,
+  "maxMinutes": 9,
+  "checks": [
+    { "kind": "csv_rows", "match": "job|\\.csv$", "min": 55, "max": 60 },
+    { "kind": "csv_columns", "match": "job|\\.csv$", "required": ["title", "link|url", "age|posted"] },
+    { "kind": "csv_unique", "match": "job|\\.csv$", "column": "link|url" },
+    { "kind": "content", "match": "job|\\.csv$", "regex": "item\\?id=[0-9]+" },
+    { "kind": "row_accounting", "match": "job|\\.csv$" }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "id": "market-map-browser-tools",
+  "tier": "full",
+  "why": "Real-work market map: multi-site research (3 official sites/repos) into one cited report; judge for synthesis quality, deterministic tripwires for license + citations, and every cited URL must match a page the browser actually opened. Verified 2026-08-02: all three sites 200; GitHub API confirms Apache-2.0 licenses and TypeScript/TypeScript/Java languages.",
+  "task": "Research these three browser-automation frameworks using ONLY their official sites and GitHub repositories: Playwright (https://playwright.dev, github.com/microsoft/playwright), Puppeteer (https://pptr.dev, github.com/puppeteer/puppeteer), and Selenium (https://www.selenium.dev, github.com/SeleniumHQ/selenium). Write market-map.md with one section per framework stating: who maintains it, its primary implementation language, its license, one capability that differentiates it from the other two, and the exact URL each fact came from. Include only facts you actually saw on a page — no numbers or claims from memory. End with a three-row comparison table and a 2-3 sentence recommendation of when to pick each.",
+  "maxSteps": 24,
+  "maxMinutes": 13,
+  "checks": [
+    { "kind": "file", "match": "market|map|\\.md$" },
+    { "kind": "content", "match": "market|map|\\.md$", "regex": "Apache" },
+    { "kind": "content", "match": "market|map|\\.md$", "regex": "Playwright" },
+    { "kind": "content", "match": "market|map|\\.md$", "regex": "Puppeteer" },
+    { "kind": "content", "match": "market|map|\\.md$", "regex": "Selenium" },
+    { "kind": "content", "match": "market|map|\\.md$", "regex": "playwright\\.dev|pptr\\.dev|selenium\\.dev|github\\.com" },
+    { "kind": "citations_visited", "match": "market|map|\\.md$" },
+    {
+      "kind": "judge",
+      "threshold": 7,
+      "context_files": "market|map|\\.md$",
+      "ground": "All three frameworks are Apache-2.0 licensed (verified on their GitHub repos). Playwright is maintained by Microsoft, primarily TypeScript. Puppeteer is maintained by Google (Chrome DevTools team), primarily TypeScript. Selenium is maintained by SeleniumHQ / the Software Freedom Conservancy community, core in Java with multi-language bindings. Differentiators along these lines are correct: Playwright = cross-browser (Chromium/Firefox/WebKit) with auto-waiting; Puppeteer = Chrome/Chromium-focused DevTools-protocol control; Selenium = the W3C WebDriver standard with the broadest language/grid ecosystem.",
+      "rubric": "Score 0-10. AUTOMATIC FAIL (score <= 3) if any framework's license or maintainer contradicts the ground truth, or if the report states specific numbers (stars, downloads, versions, dates) without a cited URL where such a number would appear. To score >= 7 the report must: (a) cover all three frameworks with maintainer, language, and license consistent with ground truth; (b) give a per-fact URL for each section, drawn from the official domains or github.com — a malformed or invented URL is fabrication; (c) name one plausible differentiator per framework consistent with the ground truth; (d) include the comparison table and a concrete when-to-pick-which recommendation. Deduct for missing citations, vague differentiators, or a missing table/recommendation."
+    }
+  ]
+}

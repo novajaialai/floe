@@ -1,0 +1,15 @@
+{
+  "id": "nav-trace-elements",
+  "tier": "full",
+  "why": "Partial-escape catcher: the artifact (5 elements, symbols, atomic numbers) is trivially memorizable, so ONLY the recorded navigation trace proves Floe's browser visited all 5 pages — trace_nav requires 5 distinct successful navigates. Verified 2026-08-02: all five article URLs return 200.",
+  "task": "Navigate DIRECTLY with the navigate action, one page at a time, to the English Wikipedia article for each of these five chemical elements: Hydrogen, Helium, Lithium, Beryllium, Boron (URL pattern https://en.wikipedia.org/wiki/<Element>). From EACH article's infobox record the element's chemical symbol and atomic number. Write elements.csv with columns name, symbol, atomic_number — exactly one row per element, in the order given. Do not answer from memory: every row must come from a page you actually opened.",
+  "maxSteps": 18,
+  "maxMinutes": 9,
+  "checks": [
+    { "kind": "csv_rows", "match": "element|\\.csv$", "exact": 5 },
+    { "kind": "csv_columns", "match": "element|\\.csv$", "required": ["name|element", "symbol", "atomic|number"] },
+    { "kind": "content", "match": "element|\\.csv$", "regex": "Beryllium" },
+    { "kind": "content", "match": "element|\\.csv$", "regex": "Boron" },
+    { "kind": "trace_nav", "url_regex": "en\\.wikipedia\\.org/wiki/(Hydrogen|Helium|Lithium|Beryllium|Boron)", "min_distinct": 5 }
+  ]
+}

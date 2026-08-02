@@ -33,7 +33,7 @@ export interface Provider {
 }
 
 export interface AgentEvent {
-  type: "thought" | "tool_call" | "tool_result" | "done" | "error" | "paused" | "resumed";
+  type: "thought" | "tool_call" | "tool_result" | "done" | "error" | "paused" | "resumed" | "ws_write";
   step: number;
   detail: string;
   /** Which agent emitted it — "main" for the orchestrator, else the executor name. */

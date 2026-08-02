@@ -201,7 +201,7 @@ Reliability is the product — commercial browser agents win on benchmark spread
 ```bash
 export FLOE_PROVIDER=... FLOE_BASE_URL=... FLOE_MODEL=...   # any configured provider
 npm run eval:quick      # ~4 fast cases — run on every engine change
-npm run eval            # the full suite (~12 cases)
+npm run eval            # the full suite (18 cases)
 node scripts/eval.mjs --case honest-gaps   # one case by id
 ```
 
@@ -212,7 +212,7 @@ Each case is one JSON file in `evals/cases/` — a task (or a shipped template +
 
 The suite also covers multi-page pagination + dedupe, infinite scroll, interactive navigation (Wikipedia search → infobox fact), `spawn_agents` fan-out (both executor files must really exist — the `[verified]` receipts under test), the template path end-to-end, and recovery (a dead URL among live ones must be reported, not papered over). Control-protocol coverage (pause/resume/graceful stop) already lives in `smoke-events.mjs` and is not duplicated.
 
-Every case also gets an automatic **evidence check**: a run in which the agent recorded zero tool calls fails regardless of what the workspace contains, because output that appeared without the agent acting is not the agent's work. This check exists because it caught exactly that on the suite's first run (see v0.7 notes above).
+Every case also passes through a **trace-grounded integrity layer**, because output that appeared without the agent acting is not the agent's work (v0.7's first run caught exactly that): the harness parses the run's event trace and requires real successful tool calls per agent (**evidence**, with navigation + a write for artifact cases), fails any graded file the tools never receipted (**foreign-file rule**, backed by the workspace's `.floe-manifest.jsonl` write ledger), reconciles CSV rows on disk against the rows the tools reported (**row_accounting**), checks cited URLs against the pages actually visited (**citations_visited** / **trace_nav**), and rejects file mtimes outside the run window (**integrity_mtime**). The judge receives the recorded visited-URL trace as ground truth. The integrity plumbing itself is unit-tested model-free by `scripts/smoke-eval-checks.mjs`.
 
 Results append to `evals/results/<timestamp>.jsonl` and regenerate `evals/SCOREBOARD.md` (per-case table, suite totals, previous-run comparison). The scoreboard is honest by policy: failing cases stay red until the engine earns the pass — cases are never tuned to green.
 
@@ -285,8 +285,10 @@ Design notes:
 4. ✅ Scheduler: saved workflows on cron ("morning briefing at 7am"), run history, macOS LaunchAgent with sleep catch-up
 5. ✅ Desktop app: headless runner protocol (JSONL + control commands), command bar, live timeline, pause/resume/stop/kill, workflows + history + settings, in a Tauri window or a localhost tab
 6. ✅ Template library (53 templates, 10 categories) + lint + in-app gallery + generated static site
-7. ✅ Eval harness: 12 live-site cases (deterministic workspace assertions + adversarial LLM judge), honest scoreboard, provider-call timeout for unattended runs
-8. Hardening loop driven by eval failures; Google Sheets writer; logged-in templates
+7. ✅ Eval harness: live-site cases (deterministic workspace assertions + adversarial LLM judge), honest scoreboard, provider-call timeout for unattended runs
+8. ✅ Hardening: shadow-DOM piercing, overlay/dialog + HTTP-error detection, trace-grounded eval integrity (write ledger, row accounting, citation grounding), 18-case suite (deterministic workspace assertions + adversarial LLM judge), honest scoreboard, provider-call timeout for unattended runs
+8. ✅ Hardening: shadow-DOM piercing, overlay/dialog + HTTP-error detection, trace-grounded eval integrity (write ledger, row accounting, citation grounding), 18-case suite
+9. Next: eval-failure-driven fixes; Google Sheets writer; logged-in templates
 
 ## License
 

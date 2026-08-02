@@ -1,4 +1,4 @@
-import type { AgentEvent, Msg, Provider, ToolResult } from "./types.js";
+import type { AgentEvent, ChatResponse, Msg, Provider, ToolCall, ToolResult } from "./types.js";
 import { executeTool, toolDefs, type ToolRuntime } from "./tools.js";
 import type { RunControl } from "./control.js";
 
@@ -61,8 +61,14 @@ export async function runAgent(
   const emit = (e: AgentEvent) => raw(label ? { ...e, agent: label } : e);
   const system = SYSTEM_PROMPT + (rt.spawn ? `\n${ORCHESTRATOR_PROMPT}` : "");
   const tools = toolDefs(rt);
+  // Deliberately NOT the filesystem path: workspace files are addressed by
+  // bare name through the tools, and a backend that never learns the path
+  // cannot write "results" into it behind Floe's back.
   const messages: Msg[] = [
-    { role: "user", content: `Task:\n${task}\n\nWorkspace directory: ${rt.workspace.dir}\nBegin.` },
+    {
+      role: "user",
+      content: `Task:\n${task}\n\nYou have a private task workspace for files; address them by bare file name via workspace_write / workspace_read / paginate_extract.\nBegin.`,
+    },
   ];
   let warned = false;
   let graceLeft = opts.graceSteps ?? 4;
@@ -98,7 +104,15 @@ export async function runAgent(
       }
     }
     trimHistory(messages, opts.toolResultWindow ?? 6);
-    const res = await provider.chat(system, messages, tools);
+    let res: ChatResponse;
+    try {
+      res = await provider.chat(system, messages, tools);
+    } catch (err: any) {
+      // A terminal provider failure must still leave a terminal event in the
+      // stream — JSONL consumers otherwise see a run that just stops.
+      emit({ type: "error", step, detail: `provider failed permanently: ${err?.message ?? err}` });
+      throw err;
+    }
     if (res.text) emit({ type: "thought", step, detail: res.text });
 
     if (res.toolCalls.length === 0) {
@@ -120,30 +134,66 @@ export async function runAgent(
       return { success: acted, summary: res.text, steps: step };
     }
 
-    acted = true;
     messages.push({ role: "assistant", content: res.text, toolCalls: res.toolCalls });
     const results: ToolResult[] = [];
+    let doneCall: ToolCall | undefined;
     for (const tc of res.toolCalls) {
       emit({ type: "tool_call", step, detail: `${tc.name} ${JSON.stringify(tc.input).slice(0, 300)}` });
       if (tc.name === "done") {
-        const input = tc.input as { summary: string; success: boolean };
-        emit({ type: "done", step, detail: input.summary });
-        return { success: input.success, summary: input.summary, steps: step };
+        // Deferred until the siblings ran: models batch "final write + done" in
+        // one turn, and returning here would silently drop those writes.
+        doneCall = tc;
+        continue;
       }
       try {
         const out = await executeTool(rt, tc.name, tc.input);
+        // "Acted" means a tool actually EXECUTED — a call that merely parsed
+        // (or threw before touching anything) is not evidence of work.
+        acted = true;
         results.push({ callId: tc.id, content: out });
-        emit({ type: "tool_result", step, detail: out.slice(0, 200) });
+        emit({ type: "tool_result", step, detail: eventDetail(out) });
       } catch (err: any) {
         const msg = `ERROR: ${err.message ?? err}`;
         results.push({ callId: tc.id, content: msg, isError: true });
         emit({ type: "error", step, detail: msg });
       }
     }
+    if (doneCall) {
+      const input = doneCall.input as { summary: string; success: boolean };
+      if (input.success && !acted && protocolNudges < 2) {
+        // done(success=true) after zero executed actions is the same escape
+        // signature as a text-only answer — reject it the same way.
+        protocolNudges++;
+        results.push({
+          callId: doneCall.id,
+          content:
+            "REJECTED: you report success but this run has not executed a single action — no page was visited and no workspace file was written by your tools, so there is no result to succeed with. Perform the task through your tool actions, or call done with success=false.",
+          isError: true,
+        });
+        emit({ type: "error", step, detail: "done(success=true) with zero executed actions — rejected" });
+      } else {
+        emit({ type: "done", step, detail: input.summary });
+        return { success: input.success, summary: input.summary, steps: step };
+      }
+    }
     messages.push({ role: "toolResults", results });
   }
 
   return { success: false, summary: `Hit step limit (${maxSteps}) before completing the task.`, steps: maxSteps };
+}
+
+/**
+ * What a tool_result event carries: the head of the output, plus any WARNING /
+ * [!] lines that fall beyond it — paginate_extract puts its most important
+ * line last, and the operator watching the stream must see it too.
+ */
+function eventDetail(out: string): string {
+  const head = out.slice(0, 600);
+  const tail = out
+    .slice(600)
+    .split("\n")
+    .filter((l) => /^(WARNING|\[!\])/.test(l.trim()));
+  return tail.length ? `${head}\n${tail.join("\n")}` : head;
 }
 
 /** Truncate old tool results so long tasks don't blow the context window. */

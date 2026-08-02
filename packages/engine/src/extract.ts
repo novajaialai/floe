@@ -39,9 +39,22 @@ export const EXTRACT_SCRIPT = `(() => {
   };
   const median = (xs) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[s.length >> 1] : 0; };
 
+  // ---- shadow-piercing walk (open roots, depth-capped) -------------------
+  // Web-component sites (Reddit, LWC apps, consent widgets) render inside
+  // open shadow roots that a flat querySelectorAll never reaches.
+  const allEls = [];
+  const walkAll = (root, depth) => {
+    for (const el of root.querySelectorAll('*')) {
+      allEls.push(el);
+      if (el.shadowRoot && depth < 5) walkAll(el.shadowRoot, depth + 1);
+    }
+  };
+  if (document.body) walkAll(document.body, 0);
+
   // ---- 1. regular tables -------------------------------------------------
   let best = null;
-  for (const t of document.querySelectorAll('table')) {
+  for (const t of allEls) {
+    if (t.tagName !== 'TABLE') continue;
     const rows = Array.from(t.rows);
     if (rows.length < 3) continue;
     const counts = rows.map((r) => r.cells.length);
@@ -70,15 +83,24 @@ export const EXTRACT_SCRIPT = `(() => {
   const SKIP = new Set(['HTML','BODY','HEAD','SCRIPT','STYLE','BR','OPTION','PATH','SVG','META','LINK','NOSCRIPT']);
   const groups = new Map();
   let order = 0;
-  for (const el of document.body ? document.body.querySelectorAll('*') : []) {
-    if (SKIP.has(el.tagName) || !el.parentElement) continue;
+  for (const el of allEls) {
+    // Shadow-root children have no parentElement; the ShadowRoot itself works
+    // as the grouping parent (it has .children like any element).
+    const parent = el.parentElement || el.parentNode;
+    if (SKIP.has(el.tagName) || !parent || !parent.children) continue;
     const cls = (el.getAttribute('class') || '').split(/\\s+/).filter(Boolean).sort().slice(0, 4).join('.');
-    const key = el.tagName + '|' + cls;
-    let byParent = groups.get(key);
-    if (!byParent) groups.set(key, (byParent = new Map()));
-    let g = byParent.get(el.parentElement);
-    if (!g) byParent.set(el.parentElement, (g = { els: [], first: order }));
-    g.els.push(el);
+    const add = (key) => {
+      let byParent = groups.get(key);
+      if (!byParent) groups.set(key, (byParent = new Map()));
+      let g = byParent.get(parent);
+      if (!g) byParent.set(parent, (g = { els: [], first: order }));
+      g.els.push(el);
+    };
+    add(el.tagName + '|' + cls);
+    // Tag-only candidate too: per-state class variants ('item read' vs 'item
+    // unread', A/B classes) fragment the classed groups and undercount rows.
+    // The scorer picks the winner, so precise classed groups still win ties.
+    if (cls) add(el.tagName + '|');
     order++;
   }
 
@@ -90,15 +112,26 @@ export const EXTRACT_SCRIPT = `(() => {
     const spans = [];
     for (let i = 1; i < idx.length; i++) spans.push(idx[i] - idx[i - 1]);
     const span = median(spans) || 1;
-    const recs = idx.map((start, i) => kids.slice(start, i + 1 < idx.length ? idx[i + 1] : Math.min(kids.length, start + span)));
-    const texts = recs.map((r) => r.map((e) => clean(e.innerText)).join(' ').trim());
+    const recs0 = idx.map((start, i) => kids.slice(start, i + 1 < idx.length ? idx[i + 1] : Math.min(kids.length, start + span)));
+    const texts0 = recs0.map((r) => r.map((e) => clean(e.innerText)).join(' ').trim());
+    // Drop empty records (spacer/divider members): they are never data, and a
+    // tag-only group padded with them must not outscore a real marker group.
+    const recs = [], texts = [];
+    for (let i = 0; i < recs0.length; i++) if (texts0[i].length >= 3) { recs.push(recs0[i]); texts.push(texts0[i]); }
+    if (recs.length < 3) continue;
     const med = median(texts.map((t) => t.length));
     if (med < 20) continue;
     const score = texts.length * Math.min(med, 200);
-    // tie-break within 20%: prefer the group that appears earliest in the document
-    if (!bestRep || score > bestRep.score * 1.2 || (score > bestRep.score * 0.8 && g.first < bestRep.first)) {
+    const tagOnly = key.endsWith('|');
+    // tie-break within 20%: prefer the group that appears earliest in the
+    // document; on the same first element, a classed (more specific) group
+    // beats the synthetic tag-only merge — marker segmentation stays intact
+    // (HN title+subtext) unless merging clearly adds coverage.
+    if (!bestRep || score > bestRep.score * 1.2
+      || (score > bestRep.score * 0.8 && g.first < bestRep.first)
+      || (score > bestRep.score * 0.8 && g.first === bestRep.first && bestRep.tagOnly && !tagOnly)) {
       bestRep = {
-        score, first: g.first, kind: 'repeated', source: key.replace('|', '.').replace(/\\.$/, ''),
+        score, first: g.first, tagOnly, kind: 'repeated', source: key.replace('|', '.').replace(/\\.$/, ''),
         rows: recs.slice(0, MAX_ROWS).map((r) => ({
           cells: r.flatMap((e) => lines(e)).slice(0, MAX_CELLS).map((c) => c.slice(0, CELL_CHARS)),
           links: linksOf(r),
@@ -120,8 +153,18 @@ export const EXTRACT_SCRIPT = `(() => {
 export const FIND_NEXT_SCRIPT = `(() => {
   const clean = (s) => (s || '').replace(/\\s+/g, ' ').trim();
   const RE = /^(more|next|next page|next \\u203a|older|load more|show more|view more|\\u00bb|\\u203a|>|>>|\\u2192)$/i;
-  document.querySelectorAll('[data-floe-next]').forEach((e) => e.removeAttribute('data-floe-next'));
-  const cands = Array.from(document.querySelectorAll('a[rel="next"], a[href], button, [role="button"]'));
+  // Shadow-piercing walk, same reason as the extractor: pagination controls on
+  // web-component sites live inside open shadow roots.
+  const all = [];
+  const walkAll = (root, depth) => {
+    for (const el of root.querySelectorAll('*')) {
+      all.push(el);
+      if (el.shadowRoot && depth < 5) walkAll(el.shadowRoot, depth + 1);
+    }
+  };
+  walkAll(document, 0);
+  for (const e of all) if (e.hasAttribute('data-floe-next')) e.removeAttribute('data-floe-next');
+  const cands = all.filter((el) => el.matches('a[rel="next"], a[href], button, [role="button"]'));
   const visible = cands.filter((el) => {
     const r = el.getBoundingClientRect();
     return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden';
@@ -134,6 +177,31 @@ export const FIND_NEXT_SCRIPT = `(() => {
     else if (RE.test(t)) s = 2;
     else if (/^(next|more|load more|show more)\\b/i.test(t) && t.length < 24) s = 1;
     if (s) scored.push({ el, s });
+  }
+  // Numbered-only pagination ("1 2 3 4" with no Next link): the link labelled
+  // current+1, where "current" is a numeric marker that is not itself a plain
+  // link (or carries aria-current). Scores below rel=next and exact matches.
+  const numOf = (el) => { const t = clean(el.innerText); return /^\\d{1,4}$/.test(t) ? parseInt(t, 10) : null; };
+  const numLinks = visible.filter((el) => el.tagName === 'A' && numOf(el) !== null);
+  if (numLinks.length >= 2) {
+    const containers = new Set();
+    for (const l of numLinks) {
+      if (l.parentElement) containers.add(l.parentElement);
+      if (l.parentElement && l.parentElement.parentElement) containers.add(l.parentElement.parentElement);
+    }
+    outer: for (const c of containers) {
+      let cur = null;
+      for (const el of c.querySelectorAll('*')) {
+        if (el.childElementCount) continue;
+        const n = numOf(el);
+        if (n === null) continue;
+        const a = el.closest('a');
+        if (a && !a.getAttribute('aria-current')) continue; // a plain link is a destination, not the current page
+        cur = n;
+      }
+      if (cur === null) continue;
+      for (const l of numLinks) if (numOf(l) === cur + 1 && c.contains(l)) { scored.push({ el: l, s: 1.5 }); break outer; }
+    }
   }
   if (!scored.length) return null;
   scored.sort((a, b) => b.s - a.s);

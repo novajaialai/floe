@@ -1,0 +1,15 @@
+{
+  "id": "openlibrary-search-book",
+  "tier": "full",
+  "why": "Search-form + results-list + click-through on a heavier real site (OpenLibrary), verified against stable bibliographic facts, with the cited page URL required to match a page the browser actually opened. Verified 2026-08-02: search renders results, top work = /works/OL59800W 'The Left Hand of Darkness by Ursula K. Le Guin', 'First published in 1969' on page.",
+  "task": "Go to https://openlibrary.org, use the site's search box to search for 'The Left Hand of Darkness', open the TOP matching book's page from the results list, and write book.md containing: the book's exact title, the author's full name, the year it was first published, and the full URL of the Open Library page you took these facts from.",
+  "maxSteps": 14,
+  "maxMinutes": 8,
+  "checks": [
+    { "kind": "file", "match": "book|\\.md$" },
+    { "kind": "content", "match": "book|\\.md$", "regex": "1969" },
+    { "kind": "content", "match": "book|\\.md$", "regex": "Le Guin" },
+    { "kind": "content", "match": "book|\\.md$", "regex": "openlibrary\\.org/(works|books)/OL" },
+    { "kind": "citations_visited", "match": "book|\\.md$" }
+  ]
+}

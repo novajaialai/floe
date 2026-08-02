@@ -1,0 +1,15 @@
+{
+  "id": "arxiv-listing",
+  "tier": "full",
+  "why": "Structural: arXiv /recent always shows 50 entries on page 1, in a dt/dd definition-list shape the extractor has never been tested on. Paper ids are this-week-fresh, unfakeable from memory. Verified 2026-08-02: exactly 50 dt entries / 50 distinct arXiv ids on page 1 (~95KB HTML).",
+  "task": "Go to https://arxiv.org/list/cs.AI/recent and extract every paper on the FIRST page only into papers.csv with columns: id (the arXiv identifier, e.g. arXiv:2607.28617) and title. Do not follow any pagination or 'more' links.",
+  "maxSteps": 12,
+  "maxMinutes": 7,
+  "checks": [
+    { "kind": "csv_rows", "match": "paper|\\.csv$", "exact": 50 },
+    { "kind": "csv_columns", "match": "paper|\\.csv$", "required": ["id|arxiv", "title"] },
+    { "kind": "csv_unique", "match": "paper|\\.csv$", "column": "id|arxiv" },
+    { "kind": "content", "match": "paper|\\.csv$", "regex": "\\b\\d{4}\\.\\d{4,5}\\b" },
+    { "kind": "row_accounting", "match": "paper|\\.csv$" }
+  ]
+}

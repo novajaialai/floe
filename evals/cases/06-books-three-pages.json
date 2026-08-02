@@ -6,8 +6,27 @@
   "maxSteps": 20,
   "maxMinutes": 12,
   "checks": [
-    { "kind": "csv_rows", "match": "\\.csv$", "exact": 60 },
-    { "kind": "csv_columns", "match": "\\.csv$", "required": ["title", "price"] },
-    { "kind": "content", "match": "\\.csv$", "regex": "£|&pound;|\\d+\\.\\d{2}" }
+    {
+      "kind": "csv_rows",
+      "match": "\\.csv$",
+      "exact": 60
+    },
+    {
+      "kind": "csv_columns",
+      "match": "\\.csv$",
+      "required": [
+        "title",
+        "price"
+      ]
+    },
+    {
+      "kind": "content",
+      "match": "\\.csv$",
+      "regex": "£|&pound;|\\d+\\.\\d{2}"
+    },
+    {
+      "kind": "row_accounting",
+      "match": "\\.csv$"
+    }
   ]
 }

@@ -9,8 +9,9 @@ import { closeActiveBrowser, runTask, setLogSink, type TaskOptions } from "./run
  *   {"ev":"start","ts":…,"task":…}          run accepted
  *   {"ev":"workspace","ts":…,"dir":…}       run workspace on disk
  *   {"ev":"log","ts":…,"msg":…}             human-readable line (never parse it)
- *   {"ev":"thought"|"tool_call"|"tool_result"|"done"|"error"|"paused"|"resumed",
+ *   {"ev":"thought"|"tool_call"|"tool_result"|"done"|"error"|"paused"|"resumed"|"ws_write",
  *    "ts":…,"agent":"main","step":3,"detail":…}
+ *   ("ws_write" = a receipted workspace write: file, bytes added, size after, owning tool)
  *   {"ev":"control","ts":…,"state":"running"|"paused"|"stopping"}
  *   {"ev":"end","ts":…,"success":…,"steps":…,"summary":…,"workspace":…}
  *   {"ev":"fatal","ts":…,"error":…}

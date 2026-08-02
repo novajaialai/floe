@@ -6,8 +6,27 @@
   "maxSteps": 12,
   "maxMinutes": 6,
   "checks": [
-    { "kind": "csv_rows", "match": "\\.csv$", "exact": 10 },
-    { "kind": "csv_columns", "match": "\\.csv$", "required": ["text|quote", "author"] },
-    { "kind": "content", "match": "\\.csv$", "regex": "Albert Einstein" }
+    {
+      "kind": "csv_rows",
+      "match": "\\.csv$",
+      "exact": 10
+    },
+    {
+      "kind": "csv_columns",
+      "match": "\\.csv$",
+      "required": [
+        "text|quote",
+        "author"
+      ]
+    },
+    {
+      "kind": "content",
+      "match": "\\.csv$",
+      "regex": "Albert Einstein"
+    },
+    {
+      "kind": "row_accounting",
+      "match": "\\.csv$"
+    }
   ]
 }

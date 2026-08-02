@@ -6,7 +6,21 @@
   "maxSteps": 12,
   "maxMinutes": 6,
   "checks": [
-    { "kind": "csv_rows", "match": "\\.csv$", "exact": 30 },
-    { "kind": "csv_sequence", "match": "\\.csv$", "column": "rank", "first": 1, "last": 30 }
+    {
+      "kind": "csv_rows",
+      "match": "\\.csv$",
+      "exact": 30
+    },
+    {
+      "kind": "csv_sequence",
+      "match": "\\.csv$",
+      "column": "rank",
+      "first": 1,
+      "last": 30
+    },
+    {
+      "kind": "row_accounting",
+      "match": "\\.csv$"
+    }
   ]
 }

@@ -93,8 +93,8 @@ async function runExecutor(name: string, spec: SpawnSpec, opts: SpawnerOptions):
   try {
     const res = await runAgent(
       opts.providerFor(spec.model),
-      { session, workspace: opts.workspace },
-      executorTask(name, spec.task, opts.workspace.dir),
+      { session, workspace: opts.workspace, label: name },
+      executorTask(name, spec.task),
       {
         maxSteps: Math.min(Math.max(1, spec.max_steps ?? opts.maxStepsDefault ?? 25), 60),
         deadline: opts.deadline,
@@ -133,7 +133,7 @@ function finish(
     startedAt: startedAt.slice(11, 19),
     endedAt: new Date(end).toISOString().slice(11, 19),
     summary,
-    files: describeWrites(name, workspace, before),
+    files: describeWrites(name, workspace, before, t0),
   };
 }
 
@@ -154,10 +154,23 @@ function fileState(workspace: Workspace): Map<string, number> {
  * An executor's summary is a *claim*; this is the receipt. Models — small ones
  * especially — will report "wrote results.csv" after skipping the write, so the
  * orchestrator is told what changed on disk, not what it was told.
+ *
+ * Credit is manifest-attributed, not time-window-diffed: a file counts as this
+ * executor's only if the workspace ledger shows ITS tool calls wrote it. A
+ * byte that merely appeared during the window (a sibling, or something outside
+ * Floe entirely) earns no [verified] credit — otherwise a foreign write during
+ * the window would be laundered through the very integrity mechanism.
  */
-function describeWrites(agent: string, workspace: Workspace, before: Map<string, number>): string {
+function describeWrites(agent: string, workspace: Workspace, before: Map<string, number>, sinceTs: number): string {
   const after = fileState(workspace);
+  const receipted = new Set(
+    workspace
+      .readManifest()
+      .filter((r) => r.agent === agent && r.ts >= sinceTs)
+      .map((r) => r.file),
+  );
   const mine: string[] = [];
+  const unreceipted: string[] = [];
   let others = 0;
   for (const [file, size] of after) {
     const prev = before.get(file);
@@ -167,26 +180,33 @@ function describeWrites(agent: string, workspace: Workspace, before: Map<string,
       others++;
       continue;
     }
+    if (!receipted.has(file)) {
+      unreceipted.push(file);
+      continue;
+    }
     const body = workspace.read(file).trim();
     const csv = file.endsWith(".csv");
     const rows = Math.max(0, body ? body.split("\n").length - (csv ? 1 : 0) : 0);
     mine.push(`${file} (${prev === undefined ? "new" : "updated"}, ${rows} ${csv ? "data rows" : "lines"})`);
   }
   const note = others ? ` (${others} other file(s) changed meanwhile — siblings running in parallel)` : "";
+  const alert = unreceipted.length
+    ? ` UNRECEIPTED: ${unreceipted.join(", ")} changed on disk with no tool-write receipt from this executor — NOT credited; treat that content as unverified.`
+    : "";
   return mine.length
-    ? `files written: ${mine.join(", ")}${note}`
-    : `FILES WRITTEN: NONE — nothing appeared on disk for this executor${note}. Treat its summary as unverified and re-spawn it if you need the data.`;
+    ? `files written: ${mine.join(", ")}${note}${alert}`
+    : `FILES WRITTEN: NONE — no receipted write from this executor${note}${alert}. Treat its summary as unverified and re-spawn it if you need the data.`;
 }
 
 /** Framing that makes an executor safe to run beside its siblings. */
-function executorTask(name: string, task: string, dir: string): string {
+function executorTask(name: string, task: string): string {
   return `You are executor agent "${name}", one of several agents working IN PARALLEL on one larger task, each in its own browser window.
 
 Your assignment:
 ${task}
 
 Shared-workspace rules:
-- The workspace (${dir}) is shared with the other agents. Every file YOU create must start with "${name}-" (e.g. ${name}-results.csv). Never write to, overwrite or delete a file that does not start with "${name}-".
+- The task workspace (files addressed by bare name through your workspace tools) is shared with the other agents. Every file YOU create must start with "${name}-" (e.g. ${name}-results.csv). Never write to, overwrite or delete a file that does not start with "${name}-".
 - You cannot see or talk to the other agents. Do only your own assignment; do not attempt the whole task.
 - Report back by (1) writing your results to your file(s) and (2) calling done with a short summary that names the files you wrote and the number of records in them.
 - Before you call done you MUST have actually run the action that writes your file (paginate_extract for rows, workspace_write for prose) and then read it back with workspace_read to confirm it exists and holds the expected content. Never report a file you have not seen come back from workspace_read — your caller checks the disk and an unwritten file is a failed task.`;

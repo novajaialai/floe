@@ -1,11 +1,27 @@
-import type { FloeBrowser } from "./browser.js";
+import type { BrowserSession } from "./browser.js";
 import type { Workspace } from "./workspace.js";
 import type { ToolDef } from "./types.js";
 import type { ExtractedRow, ExtractedTable } from "./extract.js";
 
+/** Launch N executor subagents and block until they all finish. */
+export type SpawnFn = (specs: SpawnSpec[]) => Promise<string>;
+
+export interface SpawnSpec {
+  name?: string;
+  task: string;
+  model?: string;
+  max_steps?: number;
+}
+
+/**
+ * What one agent can touch: its OWN browser session, the shared task
+ * workspace, and — only if it is the orchestrator — the ability to spawn
+ * executors.
+ */
 export interface ToolRuntime {
-  browser: FloeBrowser;
+  session: BrowserSession;
   workspace: Workspace;
+  spawn?: SpawnFn;
 }
 
 type Handler = (rt: ToolRuntime, input: any) => Promise<string>;
@@ -13,6 +29,8 @@ type Handler = (rt: ToolRuntime, input: any) => Promise<string>;
 interface RegisteredTool {
   def: ToolDef;
   handler: Handler;
+  /** Only offered to an agent that can spawn (the orchestrator). */
+  orchestratorOnly?: boolean;
 }
 
 function obj(props: Record<string, unknown>, required: string[]): Record<string, unknown> {
@@ -20,8 +38,8 @@ function obj(props: Record<string, unknown>, required: string[]): Record<string,
 }
 
 async function describePage(rt: ToolRuntime): Promise<string> {
-  const s = await rt.browser.snapshot();
-  const t = await rt.browser.extractTable().catch(() => null);
+  const s = await rt.session.snapshot();
+  const t = await rt.session.extractTable().catch(() => null);
   const hint =
     t && t.rows.length >= 5
       ? `\n[!] ${t.rows.length} repeated records detected on this page (${t.source}). Use extract_table / paginate_extract for them — the page text below is truncated and must not be used to transcribe rows.`
@@ -91,7 +109,7 @@ export const TOOLS: RegisteredTool[] = [
       parameters: obj({ url: { type: "string" } }, ["url"]),
     },
     handler: async (rt, i) => {
-      await rt.browser.navigate(i.url);
+      await rt.session.navigate(i.url);
       return describePage(rt);
     },
   },
@@ -111,7 +129,7 @@ export const TOOLS: RegisteredTool[] = [
       parameters: obj({ element_id: { type: "number" } }, ["element_id"]),
     },
     handler: async (rt, i) => {
-      await rt.browser.click(i.element_id);
+      await rt.session.click(i.element_id);
       return describePage(rt);
     },
   },
@@ -126,7 +144,7 @@ export const TOOLS: RegisteredTool[] = [
       ),
     },
     handler: async (rt, i) => {
-      await rt.browser.type(i.element_id, i.text, i.submit ?? false);
+      await rt.session.type(i.element_id, i.text, i.submit ?? false);
       return describePage(rt);
     },
   },
@@ -137,7 +155,7 @@ export const TOOLS: RegisteredTool[] = [
       parameters: obj({ key: { type: "string" } }, ["key"]),
     },
     handler: async (rt, i) => {
-      await rt.browser.press(i.key);
+      await rt.session.press(i.key);
       return describePage(rt);
     },
   },
@@ -148,7 +166,7 @@ export const TOOLS: RegisteredTool[] = [
       parameters: obj({ direction: { type: "string", enum: ["down", "up"] } }, ["direction"]),
     },
     handler: async (rt, i) => {
-      await rt.browser.scroll(i.direction);
+      await rt.session.scroll(i.direction);
       return describePage(rt);
     },
   },
@@ -156,7 +174,7 @@ export const TOOLS: RegisteredTool[] = [
     def: {
       name: "tabs",
       description:
-        "Manage tabs. action=list lists tabs; action=new opens a tab (optional url); action=switch activates tab by index.",
+        "Manage the tabs owned by YOUR browser session. action=list lists them; action=new opens another one (optional url); action=switch activates one by index. Other agents' tabs are invisible to you.",
       parameters: obj(
         { action: { type: "string", enum: ["list", "new", "switch"] }, url: { type: "string" }, index: { type: "number" } },
         ["action"],
@@ -164,14 +182,14 @@ export const TOOLS: RegisteredTool[] = [
     },
     handler: async (rt, i) => {
       if (i.action === "new") {
-        const idx = await rt.browser.newTab(i.url);
+        const idx = await rt.session.newTab(i.url);
         return `Opened tab ${idx}.\n` + (i.url ? await describePage(rt) : "");
       }
       if (i.action === "switch") {
-        await rt.browser.switchTab(i.index);
+        await rt.session.switchTab(i.index);
         return describePage(rt);
       }
-      const tabs = await rt.browser.listTabs();
+      const tabs = await rt.session.listTabs();
       return tabs.map((t) => `${t.active ? "*" : " "} [${t.index}] ${t.title} — ${t.url}`).join("\n");
     },
   },
@@ -182,7 +200,7 @@ export const TOOLS: RegisteredTool[] = [
         "Detect the dominant repeated structure on the current page (table rows, listing cards, feed items) and return it as structured rows with numbered cells. No page text truncation — use this instead of read_page whenever you need to extract a list, then map the cell numbers to your output columns.",
       parameters: obj({ max_rows: { type: "number", description: "Rows to show (default 20)" } }, []),
     },
-    handler: async (rt, i) => renderTable(await rt.browser.extractTable(), Math.min(i.max_rows ?? 20, 100)),
+    handler: async (rt, i) => renderTable(await rt.session.extractTable(), Math.min(i.max_rows ?? 20, 100)),
   },
   {
     def: {
@@ -225,19 +243,19 @@ export const TOOLS: RegisteredTool[] = [
       let sample = "";
 
       for (let p = 1; p <= pages; p++) {
-        const table = await rt.browser.extractTable();
+        const table = await rt.session.extractTable();
         const rows = table.rows
           .filter((r) => !filter || filter.test(r.text))
           .map((r) => specs.map((s) => columnValue(r, s)));
         const res = rt.workspace.appendCsvDeduped(i.csv, names, rows, key);
         totals = { added: totals.added + res.added, skipped: totals.skipped + res.skipped, total: res.total };
-        log.push(`page ${p} (${rt.browser.page.url()}): detected ${table.rows.length} rows [${table.kind}: ${table.source}] → +${res.added} new, ${res.skipped} dup/empty`);
+        log.push(`page ${p} (${rt.session.page.url()}): detected ${table.rows.length} rows [${table.kind}: ${table.source}] → +${res.added} new, ${res.skipped} dup/empty`);
         if (!sample && res.added) {
           const shown = rows.slice(0, 3).map((r) => r.map((c, j) => `${names[j]}=${c}`).join(" | "));
           sample = `Sample rows written:\n${shown.join("\n")}`;
         }
         if (p === pages || mode === "none") break;
-        const adv = await rt.browser.advancePage(mode);
+        const adv = await rt.session.advancePage(mode);
         log.push(`  advance: ${adv.detail}`);
         if (!adv.ok) break;
       }
@@ -279,6 +297,39 @@ export const TOOLS: RegisteredTool[] = [
     handler: async (rt, i) => rt.workspace.read(i.name).slice(0, 20_000),
   },
   {
+    orchestratorOnly: true,
+    def: {
+      name: "spawn_agents",
+      description:
+        "Delegate independent page-work to executor subagents that run IN PARALLEL, each in its own browser window with its own copy of these browser tools, sharing this task workspace. Give each one a complete, self-contained task (which site, what to collect, which workspace file to write). This call blocks until every executor finishes and returns their summaries. Use it whenever the task involves 2+ independent sites/queries/sections; do the synthesis yourself afterwards from the files they wrote.",
+      parameters: obj(
+        {
+          agents: {
+            type: "array",
+            description:
+              'One entry per parallel executor, e.g. [{"name":"cnn","task":"Go to lite.cnn.com and write the top 10 headlines to cnn-results.csv"}]',
+            items: obj(
+              {
+                name: { type: "string", description: "Short slug used for the agent's window and its file prefix" },
+                task: { type: "string", description: "Complete standalone instructions, including the workspace file to write" },
+                model: { type: "string", description: "Optional model override; default is the cheap executor lane" },
+                max_steps: { type: "number", description: "Step limit for this executor (default 25)" },
+              },
+              ["task"],
+            ),
+          },
+        },
+        ["agents"],
+      ),
+    },
+    handler: async (rt, i) => {
+      if (!rt.spawn) return "ERROR: this agent cannot spawn subagents.";
+      const specs: SpawnSpec[] = Array.isArray(i.agents) ? i.agents : [];
+      if (!specs.length) return "ERROR: agents must be a non-empty array.";
+      return rt.spawn(specs);
+    },
+  },
+  {
     def: {
       name: "done",
       description:
@@ -289,12 +340,14 @@ export const TOOLS: RegisteredTool[] = [
   },
 ];
 
-export function toolDefs(): ToolDef[] {
-  return TOOLS.map((t) => t.def);
+/** The tools this runtime is allowed to use (spawning is orchestrator-only). */
+export function toolDefs(rt?: ToolRuntime): ToolDef[] {
+  return TOOLS.filter((t) => !t.orchestratorOnly || rt?.spawn).map((t) => t.def);
 }
 
 export async function executeTool(rt: ToolRuntime, name: string, input: any): Promise<string> {
   const tool = TOOLS.find((t) => t.def.name === name);
   if (!tool) throw new Error(`Unknown tool: ${name}`);
+  if (tool.orchestratorOnly && !rt.spawn) throw new Error(`Tool ${name} is not available to this agent.`);
   return tool.handler(rt, input);
 }

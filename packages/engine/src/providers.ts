@@ -1,6 +1,57 @@
 import type { ChatResponse, Msg, Provider, ToolDef } from "./types.js";
 
-async function postJson(url: string, headers: Record<string, string>, body: unknown): Promise<any> {
+/**
+ * Retry policy for provider calls. A multi-hour run must survive a dropped
+ * connection, a 429, a 5xx or a gateway that is momentarily out of capacity —
+ * dying on the first hiccup is the difference between a demo and an agent.
+ */
+export interface RetryPolicy {
+  retries: number;
+  /** Wait before attempt 2, 3, 4 … (last value repeats). */
+  delaysMs: number[];
+  onRetry?: (info: { attempt: number; waitMs: number; error: string }) => void;
+}
+
+export const DEFAULT_RETRY: RetryPolicy = { retries: 3, delaysMs: [5_000, 20_000, 60_000] };
+
+/** Counts retries across the process, so a run can report whether any fired. */
+export const retryStats = { attempts: 0, lastError: "" };
+
+const OVERLOAD_RE = /overload|capacity|rate.?limit|too many requests|temporarily|try again/i;
+
+function isRetryable(err: any): boolean {
+  const status: number | undefined = err?.status;
+  if (typeof status === "number") {
+    if (status === 408 || status === 409 || status === 429 || status >= 500) return true;
+    // A 4xx whose body says "overloaded"/"rate limited" is transient too.
+    return OVERLOAD_RE.test(String(err?.message ?? ""));
+  }
+  // No status ⇒ transport-level failure (DNS, ECONNRESET, socket hang up,
+  // truncated body) — always worth another attempt.
+  return true;
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+export async function withRetry<T>(fn: () => Promise<T>, policy: RetryPolicy = DEFAULT_RETRY): Promise<T> {
+  let lastErr: any;
+  for (let attempt = 0; attempt <= policy.retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      lastErr = err;
+      if (attempt === policy.retries || !isRetryable(err)) break;
+      const waitMs = policy.delaysMs[Math.min(attempt, policy.delaysMs.length - 1)];
+      retryStats.attempts++;
+      retryStats.lastError = String(err?.message ?? err).slice(0, 200);
+      policy.onRetry?.({ attempt: attempt + 1, waitMs, error: retryStats.lastError });
+      await sleep(waitMs);
+    }
+  }
+  throw lastErr;
+}
+
+async function postJsonOnce(url: string, headers: Record<string, string>, body: unknown): Promise<any> {
   const res = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json", ...headers },
@@ -8,9 +59,27 @@ async function postJson(url: string, headers: Record<string, string>, body: unkn
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`${url} -> ${res.status}: ${text.slice(0, 2000)}`);
+    const err: any = new Error(`${url} -> ${res.status}: ${text.slice(0, 2000)}`);
+    err.status = res.status;
+    throw err;
   }
-  return res.json();
+  const data = await res.json();
+  // Some OpenAI-compatible shims answer 200 with an error envelope.
+  if (data?.error) {
+    const err: any = new Error(`${url} -> error: ${JSON.stringify(data.error).slice(0, 500)}`);
+    err.status = data.error?.code === "rate_limit_exceeded" ? 429 : 503;
+    throw err;
+  }
+  return data;
+}
+
+async function postJson(
+  url: string,
+  headers: Record<string, string>,
+  body: unknown,
+  policy?: RetryPolicy,
+): Promise<any> {
+  return withRetry(() => postJsonOnce(url, headers, body), policy ?? DEFAULT_RETRY);
 }
 
 /** Anthropic Messages API via the user's own key. */
@@ -19,6 +88,7 @@ export class AnthropicProvider implements Provider {
     private apiKey: string,
     private model = "claude-sonnet-5",
     private baseUrl = "https://api.anthropic.com",
+    private retry: RetryPolicy = DEFAULT_RETRY,
   ) {}
 
   async chat(system: string, messages: Msg[], tools: ToolDef[]): Promise<ChatResponse> {
@@ -50,6 +120,7 @@ export class AnthropicProvider implements Provider {
         messages: converted,
         tools: tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.parameters })),
       },
+      this.retry,
     );
     const text = data.content.filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n");
     const toolCalls = data.content
@@ -65,6 +136,7 @@ export class OpenAICompatProvider implements Provider {
     private baseUrl: string,
     private model: string,
     private apiKey = "none",
+    private retry: RetryPolicy = DEFAULT_RETRY,
   ) {}
 
   async chat(system: string, messages: Msg[], tools: ToolDef[]): Promise<ChatResponse> {
@@ -96,6 +168,7 @@ export class OpenAICompatProvider implements Provider {
           function: { name: t.name, description: t.description, parameters: t.parameters },
         })),
       },
+      this.retry,
     );
     const msg = data.choices[0].message;
     const toolCalls = (msg.tool_calls ?? []).map((tc: any, i: number) => ({

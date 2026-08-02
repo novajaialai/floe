@@ -36,4 +36,6 @@ export interface AgentEvent {
   type: "thought" | "tool_call" | "tool_result" | "done" | "error";
   step: number;
   detail: string;
+  /** Which agent emitted it — "main" for the orchestrator, else the executor name. */
+  agent?: string;
 }

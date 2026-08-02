@@ -3,8 +3,8 @@
 // structure detector, and pagination advance. Usage: node scripts/smoke-extract.mjs
 import { FloeBrowser } from "../packages/engine/dist/index.js";
 
-const b = new FloeBrowser();
-await b.launch({ profileDir: "/tmp/floe-smoke-profile", headless: true });
+const browser = new FloeBrowser();
+const b = await browser.launch({ profileDir: "/tmp/floe-smoke-profile", headless: true });
 try {
   // --- sticky ids across snapshots + re-render ---
   await b.navigate("https://news.ycombinator.com");
@@ -56,5 +56,5 @@ try {
     console.log(`   advance: ${adv.detail}`);
   }
 } finally {
-  await b.close();
+  await browser.close();
 }

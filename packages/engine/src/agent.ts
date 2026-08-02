@@ -13,11 +13,28 @@ Rules:
 - Respect the user's accounts: act only as needed for the task, never change account settings or send messages unless the task explicitly says to.
 - When the task is complete (or truly impossible), call done with an honest summary.`;
 
+/** Extra rules for an agent that can delegate (only added when spawn_agents is available). */
+const ORCHESTRATOR_PROMPT = `
+You are the ORCHESTRATOR for this task. Extra rules:
+- Any part of the task that touches 2+ independent sites, queries, sections or list segments MUST be delegated with spawn_agents, all in ONE call so the executors run in parallel — never visit those pages yourself one after another.
+- Each executor gets a complete standalone task: exact URL(s), exactly what to collect, and the exact workspace file name to write (give each a distinct file, e.g. <name>-results.csv). They share this workspace but cannot see your context.
+- Keep synthesis for yourself: after spawn_agents returns, read the executors' files with workspace_read and write the final merged deliverable.
+- Use your own browser only for work that cannot be parallelised (a quick check, a final verification).`;
+
+/** Injected once when the wall-clock budget runs out, instead of a hard kill. */
+const TIME_UP = `TIME IS UP: the wall-clock budget for this task has been reached. Do NOT start new work. Save whatever you already have to the workspace and call done immediately with an honest summary of what is complete and what is not.`;
+
 export interface AgentOptions {
   maxSteps?: number;
   onEvent?: (e: AgentEvent) => void;
   /** Keep only the last N tool results verbatim; older ones are truncated to save context. */
   toolResultWindow?: number;
+  /** Epoch ms after which the agent is told to wrap up (soft stop, not a kill). */
+  deadline?: number;
+  /** Steps allowed after the deadline warning before the run is stopped anyway. */
+  graceSteps?: number;
+  /** Name used in emitted events; distinguishes parallel agents in the log. */
+  label?: string;
 }
 
 export interface AgentRunResult {
@@ -33,14 +50,29 @@ export async function runAgent(
   opts: AgentOptions = {},
 ): Promise<AgentRunResult> {
   const maxSteps = opts.maxSteps ?? 60;
-  const emit = opts.onEvent ?? (() => {});
+  const label = opts.label;
+  const raw = opts.onEvent ?? (() => {});
+  const emit = (e: AgentEvent) => raw(label ? { ...e, agent: label } : e);
+  const system = SYSTEM_PROMPT + (rt.spawn ? `\n${ORCHESTRATOR_PROMPT}` : "");
+  const tools = toolDefs(rt);
   const messages: Msg[] = [
     { role: "user", content: `Task:\n${task}\n\nWorkspace directory: ${rt.workspace.dir}\nBegin.` },
   ];
+  let warned = false;
+  let graceLeft = opts.graceSteps ?? 4;
 
   for (let step = 1; step <= maxSteps; step++) {
+    if (opts.deadline && Date.now() >= opts.deadline) {
+      if (!warned) {
+        warned = true;
+        messages.push({ role: "user", content: TIME_UP });
+        emit({ type: "error", step, detail: "time budget reached — asking the agent to wrap up" });
+      } else if (graceLeft-- <= 0) {
+        return { success: false, summary: "Stopped at the time limit; workspace holds whatever was saved.", steps: step };
+      }
+    }
     trimHistory(messages, opts.toolResultWindow ?? 6);
-    const res = await provider.chat(SYSTEM_PROMPT, messages, toolDefs());
+    const res = await provider.chat(system, messages, tools);
     if (res.text) emit({ type: "thought", step, detail: res.text });
 
     if (res.toolCalls.length === 0) {

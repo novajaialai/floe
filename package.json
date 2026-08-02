@@ -12,6 +12,8 @@
     "lint:templates": "node scripts/lint-templates.mjs",
     "test": "npm run lint:templates && node scripts/smoke-cron.mjs",
     "test:browser": "node scripts/smoke-extract.mjs",
+    "eval": "node scripts/eval.mjs",
+    "eval:quick": "node scripts/eval.mjs --tier quick",
     "site": "node scripts/build-site.mjs",
     "floe": "node packages/cli/dist/main.js"
   },

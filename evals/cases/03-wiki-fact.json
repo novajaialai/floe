@@ -1,0 +1,11 @@
+{
+  "id": "wiki-fact",
+  "tier": "quick",
+  "why": "Interactive navigation: search → click through → extract one stable infobox fact.",
+  "task": "Go to https://en.wikipedia.org, use the site's search to find the article about Ada Lovelace, open it, and write her exact date of birth to fact.txt along with one sentence saying where on the page you found it.",
+  "maxSteps": 14,
+  "maxMinutes": 7,
+  "checks": [
+    { "kind": "content", "match": "fact|\\.txt$|\\.md$", "regex": "10 December 1815|December 10,? 1815|1815-12-10" }
+  ]
+}

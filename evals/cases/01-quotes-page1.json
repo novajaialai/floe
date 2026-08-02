@@ -1,0 +1,13 @@
+{
+  "id": "quotes-page1",
+  "tier": "quick",
+  "why": "Baseline single-page extraction against a fixed dataset — exact row count possible.",
+  "task": "Go to https://quotes.toscrape.com/ and extract ONLY the first page of quotes into a CSV file named quotes.csv, with one column for the quote text and one for the author. Do not follow pagination.",
+  "maxSteps": 12,
+  "maxMinutes": 6,
+  "checks": [
+    { "kind": "csv_rows", "match": "\\.csv$", "exact": 10 },
+    { "kind": "csv_columns", "match": "\\.csv$", "required": ["text|quote", "author"] },
+    { "kind": "content", "match": "\\.csv$", "regex": "Albert Einstein" }
+  ]
+}

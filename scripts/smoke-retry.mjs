@@ -49,7 +49,29 @@ await new OpenAICompatProvider(base, "test", "k", fast).chat("sys", [{ role: "us
 check(/400/.test(threw), `400 surfaced to the caller (${threw.slice(0, 60)})`);
 check(hits === 1 && retryStats.attempts === before2, `400 was not retried (${hits} request, ${retryStats.attempts - before2} retries)`);
 
-// 3. connection refused (transport error) is retried, then gives up honestly
+// 3. a server that accepts the request but NEVER responds (hung stream) is
+//    aborted by FLOE_TIMEOUT_MS, and the timeout is retried like any transport error
+const hung = createServer(() => {
+  /* accept, hold the socket open, never write a byte */
+});
+await new Promise((r) => hung.listen(0, "127.0.0.1", r));
+const hungBase = `http://127.0.0.1:${hung.address().port}`;
+process.env.FLOE_TIMEOUT_MS = "300";
+const before4 = retryStats.attempts;
+const t0 = Date.now();
+let threw4 = "";
+await new OpenAICompatProvider(hungBase, "test", "k", { ...fast, retries: 1 })
+  .chat("sys", [{ role: "user", content: "hi" }], [])
+  .catch((e) => (threw4 = e.message));
+const elapsed = Date.now() - t0;
+delete process.env.FLOE_TIMEOUT_MS;
+hung.closeAllConnections?.();
+hung.close();
+check(/no response within 0.3s/.test(threw4), `hung stream aborted by FLOE_TIMEOUT_MS (${threw4.slice(0, 80)})`);
+check(retryStats.attempts - before4 === 1, `timeout was retried (${retryStats.attempts - before4} retry)`);
+check(elapsed < 5_000, `gave up in ${elapsed}ms, not hung forever`);
+
+// 4. connection refused (transport error) is retried, then gives up honestly
 server.close();
 const before3 = retryStats.attempts;
 let threw3 = "";

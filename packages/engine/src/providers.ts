@@ -51,19 +51,41 @@ export async function withRetry<T>(fn: () => Promise<T>, policy: RetryPolicy = D
   throw lastErr;
 }
 
+/**
+ * Per-request wall clock (FLOE_TIMEOUT_MS, default 180s). Retry/backoff cannot
+ * save a run from a stream that hangs without erroring — an unattended eval or
+ * scheduled run would wait forever. The abort covers the whole request,
+ * response-body read included, and counts as retryable (no `.status`).
+ */
+export function requestTimeoutMs(): number {
+  const v = Number(process.env.FLOE_TIMEOUT_MS);
+  return Number.isFinite(v) && v > 0 ? v : 180_000;
+}
+
 async function postJsonOnce(url: string, headers: Record<string, string>, body: unknown): Promise<any> {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "content-type": "application/json", ...headers },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    const err: any = new Error(`${url} -> ${res.status}: ${text.slice(0, 2000)}`);
-    err.status = res.status;
+  const timeoutMs = requestTimeoutMs();
+  let res: Response, data: any;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...headers },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      const err: any = new Error(`${url} -> ${res.status}: ${text.slice(0, 2000)}`);
+      err.status = res.status;
+      throw err;
+    }
+    data = await res.json();
+  } catch (err: any) {
+    if (err?.name === "TimeoutError" || err?.name === "AbortError") {
+      // Deliberately no .status → isRetryable() treats it as transport failure.
+      throw new Error(`${url} -> no response within ${timeoutMs / 1000}s (FLOE_TIMEOUT_MS) — request aborted`);
+    }
     throw err;
   }
-  const data = await res.json();
   // Some OpenAI-compatible shims answer 200 with an error envelope.
   if (data?.error) {
     const err: any = new Error(`${url} -> error: ${JSON.stringify(data.error).slice(0, 500)}`);
@@ -205,6 +227,8 @@ export class PromptToolsProvider implements Provider {
     const protocol = `${system}
 
 IMPORTANT — how you act: you are the decision-making brain for an EXTERNAL browser-automation program called Floe. The actions listed below are NOT tools in your environment; do not try to invoke any tool of your own (no file tools, no bash, no web fetch, no MCP). You act purely by PRINTING a JSON object as your reply text; the Floe program running outside this conversation parses it, performs the action in its own Chromium browser, and sends you the result as the next user message.
+
+HARD RULE: if your own environment appears to offer tools (reading/writing files, fetching web pages, running commands), you must NEVER use them for this task — not even to "help". Work done outside Floe's browser is invisible to the user, cannot be verified, and is discarded; writing into the workspace directory yourself is a protocol violation. The ONLY way anything real happens is a printed JSON action, executed by Floe, confirmed by an ACTION RESULT message. If you answer in prose without ever having printed actions, the run is treated as failed.
 
 Actions Floe can perform for you:
 ${toolDocs}

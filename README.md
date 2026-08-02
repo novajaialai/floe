@@ -4,9 +4,11 @@
 
 Floe is an open replication of the capability behind commercial AI browsers (Polar, etc.): long-horizon browser automation on your own accounts, with no credits, no billing, and no cloud dependency.
 
-## Status: v0.6 — engine + desktop app + template library (early)
+## Status: v0.7 — engine + desktop app + templates + eval harness (early)
 
-**What's new in v0.6** — 53 templates, one source of truth. Every template is a plain YAML file in `templates/` — name, description, category, integrations, `requires_login`, optional cron default, `{placeholder}` inputs and the prompt itself — and that single file feeds the CLI (`floe templates list|show`, `floe run --template <id>`), the app's **Templates** tab (filterable grid → detail view with live-substituted prompt, *Run now* / *Save as workflow*) and the generated static site (`npm run site` → `site/dist`, zero dependencies, no CDN, light and dark). `npm test` lints the library: schema fields, category in the fixed set, every `{placeholder}` declared as an input *and* every input used, cron expressions that actually parse, unique names, filename convention. The prompts are written to Floe's strengths — `paginate_extract` for lists, `spawn_agents` for multi-site fan-out, incremental CSV appends, and an explicit "say what you could not get" clause so a template reports its gaps instead of padding them.
+**What's new in v0.7** — Floe measures itself. `npm run eval` runs a 12-case live-site suite (deterministic workspace assertions + an adversarial LLM judge) through the real CLI and writes an honest scoreboard — see **Evals** below. Current score: **12/12 (100%)** on the full tier, ~13 min wall — *after* the suite earned its keep on its very first run by catching a real protocol escape: the `honest-gaps` case "passed" with **zero tool calls** — the chat backend behind the gateway had done the task with its own toolbox and written a correct-looking report into the workspace, completely bypassing Floe's browser. Three fixes landed: a HARD RULE in the prompt-tool protocol against using environment tools, an agent-loop guard that rejects a text-only "done" when the run never acted, and an automatic `evidence` check in the harness (zero recorded tool calls fails any case). The re-run passed with 14 real tool calls and a judge score of 8/10. Provider calls also got the missing reliability piece for unattended runs: an `AbortSignal` timeout (`FLOE_TIMEOUT_MS`, default 180s) so a hung stream aborts and retries instead of hanging a run forever.
+
+**v0.6** — 53 templates, one source of truth. Every template is a plain YAML file in `templates/` — name, description, category, integrations, `requires_login`, optional cron default, `{placeholder}` inputs and the prompt itself — and that single file feeds the CLI (`floe templates list|show`, `floe run --template <id>`), the app's **Templates** tab (filterable grid → detail view with live-substituted prompt, *Run now* / *Save as workflow*) and the generated static site (`npm run site` → `site/dist`, zero dependencies, no CDN, light and dark). `npm test` lints the library: schema fields, category in the fixed set, every `{placeholder}` declared as an input *and* every input used, cron expressions that actually parse, unique names, filename convention. The prompts are written to Floe's strengths — `paginate_extract` for lists, `spawn_agents` for multi-site fan-out, incremental CSV appends, and an explicit "say what you could not get" clause so a template reports its gaps instead of padding them.
 
 ![The template gallery](docs/screenshots/floe-app-templates.jpg)
 
@@ -192,6 +194,32 @@ Design of the schedule loop:
 - **Cron is local time** (a "7am briefing" means 7am where you are) and is validated at save time, not at 7am.
 - The LaunchAgent bakes in absolute `node`, the absolute CLI path, and your `FLOE_*` provider env — launchd has none of your shell's PATH or exports. It's written `chmod 600` because it can hold an API key.
 
+## Evals
+
+Reliability is the product — commercial browser agents win on benchmark spread, not features — so Floe ships the instrument that measures its own: a case-based eval harness that runs the real CLI (over the same `events-run` JSONL seam the app uses) against stable public targets and verifies the **workspace on disk**, not the agent's claims.
+
+```bash
+export FLOE_PROVIDER=... FLOE_BASE_URL=... FLOE_MODEL=...   # any configured provider
+npm run eval:quick      # ~4 fast cases — run on every engine change
+npm run eval            # the full suite (~12 cases)
+node scripts/eval.mjs --case honest-gaps   # one case by id
+```
+
+Each case is one JSON file in `evals/cases/` — a task (or a shipped template + inputs), budgets, and verifiers of two kinds:
+
+- **Deterministic** — code assertions on the run workspace: file exists, CSV row count (exact — quotes.toscrape.com has exactly 100 quotes, the books.toscrape.com Travel category exactly 11 books), required columns, value uniqueness (dedupe proof), rank continuity (HN is always 1..30), regex on content. No model in the loop.
+- **Judged** — an adversarial LLM judge (direct chat call, no browser) scores the output against a written rubric with ground truth attached, hunting for fabrication first; its strict-JSON verdict `{score, pass, reasons}` is recorded verbatim. This is how the **honest-gaps case** works: the task demands author *email addresses* from a site that has none — a pass requires explicitly reporting the gap, and any invented email is an automatic fail (backed by a deterministic no-`@` tripwire).
+
+The suite also covers multi-page pagination + dedupe, infinite scroll, interactive navigation (Wikipedia search → infobox fact), `spawn_agents` fan-out (both executor files must really exist — the `[verified]` receipts under test), the template path end-to-end, and recovery (a dead URL among live ones must be reported, not papered over). Control-protocol coverage (pause/resume/graceful stop) already lives in `smoke-events.mjs` and is not duplicated.
+
+Every case also gets an automatic **evidence check**: a run in which the agent recorded zero tool calls fails regardless of what the workspace contains, because output that appeared without the agent acting is not the agent's work. This check exists because it caught exactly that on the suite's first run (see v0.7 notes above).
+
+Results append to `evals/results/<timestamp>.jsonl` and regenerate `evals/SCOREBOARD.md` (per-case table, suite totals, previous-run comparison). The scoreboard is honest by policy: failing cases stay red until the engine earns the pass — cases are never tuned to green.
+
+Every run also depends on a provider-call watchdog added for unattended evals: each HTTP call carries an `AbortSignal` timeout (`FLOE_TIMEOUT_MS`, default 180s), so a gateway stream that hangs without erroring is aborted and retried instead of hanging the run forever. The harness adds a hard per-case timeout on top.
+
+## Smokes
+
 Model-free check of the browser/extraction layer (no API calls, launches headless Chrome):
 
 ```bash
@@ -257,7 +285,8 @@ Design notes:
 4. ✅ Scheduler: saved workflows on cron ("morning briefing at 7am"), run history, macOS LaunchAgent with sleep catch-up
 5. ✅ Desktop app: headless runner protocol (JSONL + control commands), command bar, live timeline, pause/resume/stop/kill, workflows + history + settings, in a Tauri window or a localhost tab
 6. ✅ Template library (53 templates, 10 categories) + lint + in-app gallery + generated static site
-7. Eval harness (WebVoyager subset + real-work tasks)
+7. ✅ Eval harness: 12 live-site cases (deterministic workspace assertions + adversarial LLM judge), honest scoreboard, provider-call timeout for unattended runs
+8. Hardening loop driven by eval failures; Google Sheets writer; logged-in templates
 
 ## License
 

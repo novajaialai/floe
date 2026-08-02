@@ -1,0 +1,12 @@
+{
+  "id": "quotes-all-pages",
+  "tier": "full",
+  "why": "Multi-page pagination with dedupe: quotes.toscrape.com is fixed at exactly 100 quotes over 10 pages.",
+  "task": "Go to https://quotes.toscrape.com/ and extract EVERY quote on the site into quotes.csv (columns: quote text, author), following the Next pagination until it ends. Deduplicate on the quote text. Report the final count.",
+  "maxSteps": 25,
+  "maxMinutes": 14,
+  "checks": [
+    { "kind": "csv_rows", "match": "\\.csv$", "exact": 100 },
+    { "kind": "csv_unique", "match": "\\.csv$", "column": "text|quote" }
+  ]
+}

@@ -7,3 +7,4 @@ target/
 profile/
 workspaces/
 packages/app/src-tauri/gen/
+evals/results/logs/

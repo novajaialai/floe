@@ -1,0 +1,12 @@
+{
+  "id": "quotes-infinite-scroll",
+  "tier": "full",
+  "why": "Infinite-scroll pagination (the /scroll variant loads quotes as you scroll) with a dedupe guarantee.",
+  "task": "Go to https://quotes.toscrape.com/scroll — this page loads more quotes as you scroll down. Collect at least 30 UNIQUE quotes into quotes.csv (columns: quote text, author), scrolling as needed. Deduplicate on the quote text.",
+  "maxSteps": 18,
+  "maxMinutes": 10,
+  "checks": [
+    { "kind": "csv_rows", "match": "\\.csv$", "min": 30 },
+    { "kind": "csv_unique", "match": "\\.csv$", "column": "text|quote" }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "id": "parallel-fanout",
+  "tier": "full",
+  "why": "spawn_agents fan-out with [verified] receipts: both executor files must really exist on disk, plus a merged deliverable.",
+  "task": "Two independent collection jobs — do them IN PARALLEL with spawn_agents, one executor each: (1) collect the 10 quotes on page 1 of https://quotes.toscrape.com/ (quote text + author) into that executor's own CSV; (2) collect the 20 books on page 1 of https://books.toscrape.com/ (title + price) into that executor's own CSV. When both finish, read their files and write merged.csv with columns source, item, detail — one row per quote (source=quotes, item=quote text, detail=author) and per book (source=books, item=title, detail=price). Report the counts.",
+  "maxSteps": 20,
+  "maxMinutes": 16,
+  "parallel": 2,
+  "checks": [
+    { "kind": "csv_rows", "match": "quote", "min": 10 },
+    { "kind": "csv_rows", "match": "book", "min": 20 },
+    { "kind": "csv_rows", "match": "^merged\\.csv$", "min": 25, "max": 35 },
+    { "kind": "csv_columns", "match": "^merged\\.csv$", "required": ["source", "item", "detail"] }
+  ]
+}

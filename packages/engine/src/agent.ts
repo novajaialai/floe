@@ -66,6 +66,8 @@ export async function runAgent(
   ];
   let warned = false;
   let graceLeft = opts.graceSteps ?? 4;
+  let acted = false; // has ANY tool call happened this run?
+  let protocolNudges = 0;
 
   for (let step = 1; step <= maxSteps; step++) {
     // Between steps is the only safe interruption point: a half-run tool call
@@ -100,10 +102,25 @@ export async function runAgent(
     if (res.text) emit({ type: "thought", step, detail: res.text });
 
     if (res.toolCalls.length === 0) {
-      // Model answered without acting — treat text as final.
-      return { success: true, summary: res.text, steps: step };
+      // A text-only answer after real actions is a legitimate final summary.
+      // A text-only answer when NOTHING has ever been done is the signature of
+      // a protocol escape (e.g. a chat backend "completing" the task with its
+      // own toolbox, or claiming work it never performed) — reject it, twice.
+      if (!acted && protocolNudges < 2) {
+        protocolNudges++;
+        messages.push({ role: "assistant", content: res.text, toolCalls: [] });
+        messages.push({
+          role: "user",
+          content:
+            "You have not performed a single action in this run: this browser has visited nothing and no workspace file has been written by it, so any result you describe is unverified and will be discarded. Do not answer in prose and do not use any tools of your own environment. Begin the task now by requesting your first action (for example navigate), or call done with success=false if you truly cannot act.",
+        });
+        emit({ type: "error", step, detail: "model answered without ever acting — protocol nudge injected" });
+        continue;
+      }
+      return { success: acted, summary: res.text, steps: step };
     }
 
+    acted = true;
     messages.push({ role: "assistant", content: res.text, toolCalls: res.toolCalls });
     const results: ToolResult[] = [];
     for (const tc of res.toolCalls) {

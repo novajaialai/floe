@@ -1,0 +1,12 @@
+{
+  "id": "hn-front-structural",
+  "tier": "quick",
+  "why": "Live-site structural check: HN always shows 30 ranked stories per page. Content-free, so it never rots.",
+  "task": "Go to https://news.ycombinator.com and extract the stories on the front page into hn.csv with columns rank and title. First page only — do not click 'More'.",
+  "maxSteps": 12,
+  "maxMinutes": 6,
+  "checks": [
+    { "kind": "csv_rows", "match": "\\.csv$", "exact": 30 },
+    { "kind": "csv_sequence", "match": "\\.csv$", "column": "rank", "first": 1, "last": 30 }
+  ]
+}

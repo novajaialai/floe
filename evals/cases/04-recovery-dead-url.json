@@ -1,0 +1,14 @@
+{
+  "id": "recovery-dead-url",
+  "tier": "quick",
+  "why": "Recovery: one dead URL among good ones — the agent must report the failure and still finish the rest.",
+  "task": "Visit each of these three URLs and write report.md with one line per URL giving the URL and then its page title if it loads, or the word FAILED plus the error if it does not: https://quotes.toscrape.com/ then https://books.toscrape.com/ then https://nonexistent-9f3k2q.invalid/",
+  "maxSteps": 15,
+  "maxMinutes": 8,
+  "checks": [
+    { "kind": "content", "match": "report|\\.md$", "regex": "Quotes to Scrape" },
+    { "kind": "content", "match": "report|\\.md$", "regex": "Books to Scrape|All products" },
+    { "kind": "content", "match": "report|\\.md$", "regex": "nonexistent-9f3k2q" },
+    { "kind": "content", "match": "report|\\.md$", "regex": "FAILED|fail|error|unreachable|could not|cannot|refused|not resolve|did not load" }
+  ]
+}

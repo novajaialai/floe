@@ -1,0 +1,15 @@
+{
+  "id": "template-directory",
+  "tier": "full",
+  "why": "The template path end-to-end: render a real shipped template by id with inputs, run it, verify exact output.",
+  "template": {
+    "id": "data-scrape-directory",
+    "inputs": { "directory_url": "https://books.toscrape.com/catalogue/category/books/travel_2/index.html" }
+  },
+  "maxSteps": 15,
+  "maxMinutes": 9,
+  "checks": [
+    { "kind": "csv_rows", "match": "\\.csv$", "exact": 11 },
+    { "kind": "csv_columns", "match": "\\.csv$", "required": ["title|name"] }
+  ]
+}

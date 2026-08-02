@@ -1,0 +1,13 @@
+{
+  "id": "books-three-pages",
+  "tier": "full",
+  "why": "Bounded pagination: exactly the first 3 catalogue pages of a fixed dataset → exactly 60 rows.",
+  "task": "Go to https://books.toscrape.com/ and extract the books from the FIRST THREE catalogue pages only (20 books per page) into books.csv with columns title and price. Stop after page 3. Deduplicate on title.",
+  "maxSteps": 20,
+  "maxMinutes": 12,
+  "checks": [
+    { "kind": "csv_rows", "match": "\\.csv$", "exact": 60 },
+    { "kind": "csv_columns", "match": "\\.csv$", "required": ["title", "price"] },
+    { "kind": "content", "match": "\\.csv$", "regex": "£|&pound;|\\d+\\.\\d{2}" }
+  ]
+}

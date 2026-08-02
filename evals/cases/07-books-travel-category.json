@@ -1,0 +1,12 @@
+{
+  "id": "books-travel-category",
+  "tier": "full",
+  "why": "Interactive navigation into a category, then extraction: the Travel category holds exactly 11 books.",
+  "task": "Go to https://books.toscrape.com/, click the 'Travel' category in the sidebar, and extract every book in that category into travel.csv with columns title and price.",
+  "maxSteps": 15,
+  "maxMinutes": 9,
+  "checks": [
+    { "kind": "csv_rows", "match": "\\.csv$", "exact": 11 },
+    { "kind": "csv_columns", "match": "\\.csv$", "required": ["title", "price"] }
+  ]
+}

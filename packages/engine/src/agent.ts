@@ -1,5 +1,6 @@
 import type { AgentEvent, Msg, Provider, ToolResult } from "./types.js";
 import { executeTool, toolDefs, type ToolRuntime } from "./tools.js";
+import type { RunControl } from "./control.js";
 
 const SYSTEM_PROMPT = `You are Floe, a browser agent that completes real knowledge-work tasks by operating a live Chromium browser, logged in as the user.
 
@@ -24,6 +25,9 @@ You are the ORCHESTRATOR for this task. Extra rules:
 /** Injected once when the wall-clock budget runs out, instead of a hard kill. */
 const TIME_UP = `TIME IS UP: the wall-clock budget for this task has been reached. Do NOT start new work. Save whatever you already have to the workspace and call done immediately with an honest summary of what is complete and what is not.`;
 
+/** Injected when the operator asks to stop — same graceful shape as TIME_UP. */
+const STOP_REQUESTED = `STOP REQUESTED: the operator has asked you to stop. Do NOT start new work. Save whatever you already have to the workspace and call done immediately with an honest summary of what is complete and what is not.`;
+
 export interface AgentOptions {
   maxSteps?: number;
   onEvent?: (e: AgentEvent) => void;
@@ -35,6 +39,8 @@ export interface AgentOptions {
   graceSteps?: number;
   /** Name used in emitted events; distinguishes parallel agents in the log. */
   label?: string;
+  /** Out-of-band pause/resume/stop, checked between steps. */
+  control?: RunControl;
 }
 
 export interface AgentRunResult {
@@ -62,13 +68,31 @@ export async function runAgent(
   let graceLeft = opts.graceSteps ?? 4;
 
   for (let step = 1; step <= maxSteps; step++) {
-    if (opts.deadline && Date.now() >= opts.deadline) {
+    // Between steps is the only safe interruption point: a half-run tool call
+    // has already touched a real browser.
+    if (opts.control?.isPaused) {
+      emit({ type: "paused", step, detail: "paused by operator" });
+      await opts.control.gate();
+      emit({ type: "resumed", step, detail: "resumed" });
+    }
+    const stopping = opts.control?.isStopping ?? false;
+    if (stopping || (opts.deadline && Date.now() >= opts.deadline)) {
       if (!warned) {
         warned = true;
-        messages.push({ role: "user", content: TIME_UP });
-        emit({ type: "error", step, detail: "time budget reached — asking the agent to wrap up" });
+        messages.push({ role: "user", content: stopping ? STOP_REQUESTED : TIME_UP });
+        emit({
+          type: "error",
+          step,
+          detail: stopping ? "stop requested — asking the agent to wrap up" : "time budget reached — asking the agent to wrap up",
+        });
       } else if (graceLeft-- <= 0) {
-        return { success: false, summary: "Stopped at the time limit; workspace holds whatever was saved.", steps: step };
+        return {
+          success: false,
+          summary: stopping
+            ? "Stopped on operator request; workspace holds whatever was saved."
+            : "Stopped at the time limit; workspace holds whatever was saved.",
+          steps: step,
+        };
       }
     }
     trimHistory(messages, opts.toolResultWindow ?? 6);

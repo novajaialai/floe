@@ -1,0 +1,18 @@
+[package]
+name = "floe-app"
+version = "0.5.0"
+description = "Floe — open-source browser agent"
+edition = "2021"
+license = "MIT"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+panic = "abort"

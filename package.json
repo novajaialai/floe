@@ -7,7 +7,8 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "tsc -b packages/engine packages/cli",
+    "build": "tsc -b packages/engine packages/cli && npm run build:app",
+    "build:app": "npm --workspace @floe/app run build",
     "floe": "node packages/cli/dist/main.js"
   },
   "devDependencies": {

@@ -4,15 +4,21 @@
 
 Floe is an open replication of the capability behind commercial AI browsers (Polar, etc.): long-horizon browser automation on your own accounts, with no credits, no billing, and no cloud dependency.
 
-## Status: v0.4 engine (early)
+## Status: v0.5 — engine + desktop app (early)
 
-**What's new in v0.4** — Floe runs while you sleep. Save any task (or any `templates/*.yaml`, with `{placeholder}` inputs) as a named workflow, give it a cron schedule, and a scheduler daemon fires it: `floe workflow save morning-brief --template templates/monitoring-morning-briefing.yaml --input sites=lite.cnn.com --schedule "0 7 * * *"`. The cron parser is ~130 lines in-engine (no dependency): `*`, numbers, `a-b`, `*/n`, lists, the vixie day-of-month-**or**-day-of-week rule, and loud rejection of bad expressions at *save* time rather than at 7am. Runs land in `~/.floe/workspaces/<name>/<timestamp>/` and append a line to `~/.floe/history.jsonl` (`floe history`). Sleep resilience is native: a slot missed while the Mac was asleep is served **once** on the next start if it's less than 24h old — one rule ("has the most recent slot been served?") covers both normal firing and catch-up, and the slot is claimed *before* the run so a crash can't become a run loop. `floe schedule install` writes a `com.floe.scheduler` LaunchAgent (absolute node path, provider env baked in, log at `~/.floe/logs/scheduler.log`).
+**What's new in v0.5** — Floe has a face, and a protocol behind it. `floe events-run "<task>"` runs an agent headlessly and emits **every event as JSONL on stdout** while accepting `{"cmd":"pause"|"resume"|"stop"|"kill"}` on stdin — the seam the app talks to, and a stable API for anyone embedding Floe in their own tool. Pause and stop are honest: pause blocks *between* steps (never mid-click), and stop is a graceful wrap-up (the agent is told to save and call `done`), not a kill. On top of it sits the desktop app — command bar, streaming timeline, pause/resume/stop/kill, a workflows tab with schedules + run history, and a settings tab that writes `~/.floe/config.json`, which the CLI reads too (env vars still win), so you never have to export `FLOE_*` by hand again.
+
+![Floe running a task](docs/screenshots/floe-app-running.jpg)
+
+**v0.4** — Floe runs while you sleep. Save any task (or any `templates/*.yaml`, with `{placeholder}` inputs) as a named workflow, give it a cron schedule, and a scheduler daemon fires it: `floe workflow save morning-brief --template templates/monitoring-morning-briefing.yaml --input sites=lite.cnn.com --schedule "0 7 * * *"`. The cron parser is ~130 lines in-engine (no dependency): `*`, numbers, `a-b`, `*/n`, lists, the vixie day-of-month-**or**-day-of-week rule, and loud rejection of bad expressions at *save* time rather than at 7am. Runs land in `~/.floe/workspaces/<name>/<timestamp>/` and append a line to `~/.floe/history.jsonl` (`floe history`). Sleep resilience is native: a slot missed while the Mac was asleep is served **once** on the next start if it's less than 24h old — one rule ("has the most recent slot been served?") covers both normal firing and catch-up, and the slot is claimed *before* the run so a crash can't become a run loop. `floe schedule install` writes a `com.floe.scheduler` LaunchAgent (absolute node path, provider env baked in, log at `~/.floe/logs/scheduler.log`).
 
 **v0.3** — Floe stopped being one agent in one tab. Every agent now owns its own `BrowserSession` (its own window/tabs), and an orchestrator can `spawn_agents` to run N executors **in parallel** — each with its own task, its own window, and a cheap model lane — coordinating through the shared task workspace. Live over a local gateway: three executors researched lite.cnn.com, text.npr.org and news.ycombinator.com **concurrently** (overlapping timestamps in one log), wrote three CSVs, and the orchestrator merged them into a briefing. Long runs got serious too: provider calls retry with exponential backoff (5s/20s/60s on network errors, 429, 5xx and overload envelopes), and `--max-minutes` ends a run by *telling the agent to wrap up and save*, never by killing it mid-write.
 
 **v0.2** — extraction stopped being the model's job. `extract_table` finds the page's dominant repeated structure (a regular table, or listing cards / feed items / search results, segmented by repeated markers) with pure DOM heuristics, and `paginate_extract` walks pagination writing deduped rows straight to a CSV in code. On the Hacker News 3-page benchmark that took the run from 15 steps of hand-transcribed rows to **4 steps, 90 rows, zero duplicates**. Element ids are also sticky now, so an id stays glued to its element across snapshots instead of being reassigned from 0 (the stale-click bug in v0.1).
 
 Working today:
+- **Desktop app**: command bar, live event timeline, pause/resume/stop/kill, workflows + run history, settings (`floe ui`, or the Tauri window)
+- **Headless runner protocol**: `floe events-run` / `floe events-workflow` — JSONL events out, control commands in
 - Persistent Chromium profile (log in once; sessions persist across tasks)
 - **Saved workflows + cron scheduler**: `floe workflow save/list/show/rm/run`, `floe schedule` (daemon or `--once`), `floe history`; per-run workspaces, a JSONL run log, and a `com.floe.scheduler` LaunchAgent for macOS
 - **Parallel subagents**: `spawn_agents` launches 1–N executors, each owning a browser session and running the full agent loop; results come back as done-summaries plus files in the shared workspace (each executor is namespaced to its own `<name>-*` files)
@@ -46,6 +52,53 @@ export FLOE_EXECUTOR_MODEL=haiku
 node packages/cli/dist/main.js run "Spawn agents for lite.cnn.com, text.npr.org and news.ycombinator.com in parallel; \
   each saves its top 10 headlines to its own CSV; then merge them into briefing.md" --parallel 3 --max-minutes 30
 ```
+
+## The desktop app
+
+```bash
+npm install && npm run build     # builds engine, CLI and the app bundle
+floe ui                          # → http://127.0.0.1:4321, opens your browser
+
+# native window (macOS .app, needs the Rust toolchain):
+npm --workspace @floe/app run tauri build
+open "packages/app/src-tauri/target/release/bundle/macos/Floe.app"
+```
+
+Both shells are the same app. The Tauri shell is deliberately thin — ~110 lines of Rust that start `floe ui` as a child process and point a webview at it — so there is exactly one frontend, one API, and no chance of the two drifting apart. If you don't have Rust, `floe ui` is the whole product in a browser tab.
+
+![Floe running in the native macOS window](docs/screenshots/floe-app-tauri.jpg)
+
+*The native window, mid-task. It finds your `node` even though a GUI app inherits launchd's bare `PATH`, and reads provider settings from `~/.floe/config.json` — a run launched from Finder with **no environment at all** works. (An unsigned dev build also draws a "prevented from modifying apps" notice from macOS App Management the first time it launches Chrome; it is cosmetic and blocks nothing. Code signing removes it.)*
+
+| | |
+|---|---|
+| ![command bar and live run](docs/screenshots/floe-app-running.jpg) | ![workflows and history](docs/screenshots/floe-app-workflows.jpg) |
+
+- **Command bar** — type a task, ⌘⏎ to run. Chrome opens beside the app and you watch it work.
+- **Timeline** — every thought, tool call, tool result, and error, agent-tagged (`main`, or the executor's name when a task fans out), auto-scrolling until you scroll up.
+- **Controls** — Pause (takes effect between steps), Resume, Stop (graceful: the agent saves and summarises), Kill (immediate; closes Chrome).
+- **Workflows** — saved workflows with their cron schedule and next fire time, a run-now button, and the run history from `history.jsonl` with a link that reveals each run's workspace in Finder.
+- **Settings** — provider, models, tool mode, base URL and keys, written to `~/.floe/config.json` (mode 600). The CLI applies that file at startup, and any `FLOE_*` environment variable overrides it.
+
+### Runner protocol (the embedding API)
+
+```bash
+floe events-run "Save the top 10 HN stories to top.csv" --max-steps 20
+# stdout, one JSON object per line:
+{"ts":…,"ev":"start","task":"…"}
+{"ts":…,"ev":"workspace","dir":"/Users/you/.floe/workspaces/…"}
+{"ts":…,"ev":"thought","agent":"main","step":1,"detail":"…"}
+{"ts":…,"ev":"tool_call","agent":"main","step":1,"detail":"navigate {\"url\":…}"}
+{"ts":…,"ev":"end","success":true,"steps":6,"summary":"…","workspace":"…"}
+
+# stdin, one command per line:
+{"cmd":"pause"}   # blocks before the next step; emits ev:"paused"
+{"cmd":"resume"}
+{"cmd":"stop"}    # graceful: injects "save your work and call done"
+{"cmd":"kill"}    # closes the browser and exits 137
+```
+
+`floe events-workflow <name>` does the same for a saved workflow and writes its history line. Anything that can spawn a process and read lines can drive Floe — that includes the two shells here, and it is the intended way to embed the engine.
 
 ## Workflows and schedules
 
@@ -89,9 +142,16 @@ node scripts/smoke-extract.mjs    # sticky ids, structure detector, pagination
 node scripts/smoke-parallel.mjs   # 3 concurrent sessions: isolation + id stability
 node scripts/smoke-retry.mjs      # provider retry/backoff against a fake flaky endpoint
 node scripts/smoke-cron.mjs       # cron parser + scheduler due-logic (no browser at all)
+
+# needs a model endpoint (tiny tasks): pause/resume/stop over the runner protocol
+node scripts/smoke-events.mjs
 ```
 
 Live-verified over a local OpenAI-compatible gateway (sonnet orchestrating, haiku executors):
+- **Pause is real**: `smoke-events.mjs` paused a live run at step 2, watched 15s of silence (zero step events), resumed, and the agent finished normally (2 steps, exit 0).
+- **Stop is graceful**: a second run was stopped mid-flight; the agent was told to wrap up, wrote an honest summary ("…Stopped as requested before any further work") and exited through the normal `end` event with its workspace intact.
+- **The app runs real tasks**: the screenshots above are a live run started from the command bar (paused and resumed on camera), and the workflows tab showing the scheduled `cnn-brief` workflow with its next fire time and previous scheduled run. The native window shot is a Hacker News task run from the packaged `Floe.app`.
+- **Settings really replace the environment**: with the gateway saved from the settings tab, `env -i HOME=… PATH=/usr/bin:/bin node …/main.js run "…"` — nothing else in the environment — completed a task in 2 steps.
 - **Scheduled run fires on time**: a workflow saved from `templates/monitoring-morning-briefing.yaml` (`sites=lite.cnn.com`) with schedule `3 20 * * *` was picked up at **20:03:14** for the 20:03:00 slot by a daemon polling every 15s, finished in 0.9 min / 3 steps with `briefing.md` in `~/.floe/workspaces/cnn-brief/<ts>/`, one line in `history.jsonl`, `schedule-state.json` updated — and the next tick correctly found nothing due.
 - **Catch-up after a miss**: a workflow scheduled `0 18 * * *`, first started at 20:04, ran **once**, tagged `catch-up` in history; the second and third starts were no-ops.
 - **LaunchAgent**: `floe schedule install --interval 60` → `com.floe.scheduler` logged `nothing due` at 20:05/20:06/20:07 and fired the 20:08 slot at **20:08:15**, from launchd's bare environment (absolute `node`, baked-in provider env). Uninstalled after the test.
@@ -109,11 +169,12 @@ First run launches Chrome with a fresh profile at `~/.floe/profile` — log into
 ```
 packages/engine   agent loop, browser layer (playwright-core/CDP), tools, providers, workspace,
                   cron + scheduler + workflow store
-packages/cli      `floe run|workflow|schedule|history`
+packages/cli      `floe run|ui|events-run|events-workflow|workflow|schedule|history`
+packages/app      React control UI (Vite) + a thin Tauri shell (src-tauri)
 templates/        task templates (YAML) — prompt library, generates the gallery
 ```
 
-State lives in `~/.floe/` (override with `FLOE_HOME`): `profile/` (Chrome), `workflows/*.json`,
+State lives in `~/.floe/` (override with `FLOE_HOME`): `profile/` (Chrome), `config.json`, `workflows/*.json`,
 `workspaces/<workflow>/<timestamp>/`, `history.jsonl`, `schedule-state.json`, `logs/scheduler.log`.
 
 Design notes:
@@ -123,6 +184,9 @@ Design notes:
 - **Sessions, not a global "active tab".** `FloeBrowser` is a context + session pool; a `BrowserSession` owns its page(s) and all page actions. That single seam is what makes parallelism possible, and it makes cross-agent bleed impossible by construction.
 - **Fan-out blocks, coordination is files.** `spawn_agents` returns when every executor is finished; executors report through their done summary plus the files they wrote into the shared workspace. Simple, restartable, and inspectable after the fact.
 - **Time limits are soft.** Hitting `--max-minutes` injects a "time is up, save and wrap up" turn (with a few grace steps) rather than killing a run mid-write.
+- **The UI is a client of a public protocol, not a privileged caller.** Everything the app can do, a script can do: it spawns `floe events-run` and reads JSONL. That keeps the engine honest (no UI-only code paths) and makes the desktop shell replaceable.
+- **Interrupt between steps, never inside one.** A half-executed tool call has already touched a real browser, so pause/stop are checked at step boundaries — and stop reuses the same graceful "wrap up" injection as the time budget.
+- **Config is a fallback, env is the truth.** `~/.floe/config.json` only fills in `FLOE_*` variables the environment did not set, so the app can configure Floe without breaking scripts, LaunchAgents or CI.
 
 ## Roadmap
 
@@ -130,7 +194,7 @@ Design notes:
 2. ✅ Reliability tools: generic structured extractor, list paginator with code-side dedupe, stable element ids (Google Sheets writer still to come)
 3. ✅ Orchestrator/executor split + parallel windows, provider retry/backoff, soft time budget
 4. ✅ Scheduler: saved workflows on cron ("morning briefing at 7am"), run history, macOS LaunchAgent with sleep catch-up
-5. Desktop app (Tauri): command bar, live view, pause/take-over
+5. ✅ Desktop app: headless runner protocol (JSONL + control commands), command bar, live timeline, pause/resume/stop/kill, workflows + history + settings, in a Tauri window or a localhost tab
 6. Template library + site
 7. Eval harness (WebVoyager subset + real-work tasks)
 

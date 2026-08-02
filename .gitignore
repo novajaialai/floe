@@ -1,7 +1,9 @@
 node_modules/
 dist/
+target/
 *.tsbuildinfo
 .DS_Store
 .env
 profile/
 workspaces/
+packages/app/src-tauri/gen/

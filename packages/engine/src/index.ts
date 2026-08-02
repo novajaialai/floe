@@ -4,6 +4,8 @@ export * from "./extract.js";
 export * from "./workspace.js";
 export * from "./tools.js";
 export * from "./agent.js";
+export * from "./control.js";
+export * from "./config.js";
 export * from "./orchestrator.js";
 export * from "./providers.js";
 export * from "./cron.js";

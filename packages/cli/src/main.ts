@@ -4,6 +4,7 @@ import {
   Scheduler,
   WorkflowStore,
   appendHistory,
+  applyConfig,
   floeHome,
   loadTemplate,
   readHistory,
@@ -14,7 +15,12 @@ import {
   type Workflow,
 } from "@floe/engine";
 import { runTask, stamp } from "./runner.js";
+import { eventsRun, workflowRunPaths } from "./events.js";
 import { LABEL, agentStatus, installAgent, schedulerLogPath, uninstallAgent } from "./launchd.js";
+import { serveUi } from "./ui-server.js";
+
+// Env still wins; the file only fills in what the environment did not say.
+applyConfig();
 
 function usage(): never {
   console.log(`floe — open-source browser agent (MIT)
@@ -27,6 +33,15 @@ Usage:
   floe history [<name>] [--limit <n>]         Recent runs
   floe schedule [--once] [--interval <sec>]   Run due workflows (daemon, or one pass)
   floe schedule install [--interval <sec>] | uninstall | status
+  floe ui [--port <n>] [--no-open]            Desktop control UI (localhost)
+  floe events-run "<task>" [options]          Run a task, JSONL events on stdout
+  floe events-workflow <name> [--headed]      Run a saved workflow, JSONL events
+
+events-* protocol (the UI/embedding seam):
+  stdout = one JSON object per line: start | workspace | log | thought | tool_call |
+           tool_result | error | paused | resumed | control | done | end | fatal
+  stdin  = one command per line: {"cmd":"pause"|"resume"|"stop"|"kill"|"ping"}
+           stop is graceful (agent wraps up and calls done); kill exits at once.
 
 Run options:
   --max-steps <n>       Step limit for the main agent (default 60)
@@ -80,6 +95,34 @@ async function main() {
       return cmdHistory();
     case "schedule":
       return cmdSchedule();
+    case "ui":
+      return serveUi({ port: num("--port") ?? 4321, open: !has("--no-open") });
+    case "events-run": {
+      if (!args[1]) usage();
+      process.exitCode = await eventsRun({
+        task: args[1],
+        maxSteps: num("--max-steps"),
+        maxMinutes: num("--max-minutes"),
+        parallel: num("--parallel"),
+        headless: has("--headless"),
+        profileDir: flag("--profile"),
+      });
+      return;
+    }
+    case "events-workflow": {
+      if (!args[1]) usage();
+      const wf = new WorkflowStore().require(args[1]);
+      process.exitCode = await eventsRun({
+        task: wf.task,
+        ...workflowRunPaths(wf),
+        maxSteps: wf.maxSteps,
+        maxMinutes: wf.maxMinutes,
+        parallel: wf.parallel,
+        headless: has("--headed") ? false : wf.headless,
+        workflow: wf,
+      });
+      return;
+    }
     default:
       usage();
   }

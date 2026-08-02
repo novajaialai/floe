@@ -3,6 +3,7 @@ import type { FloeBrowser } from "./browser.js";
 import type { SpawnFn, SpawnSpec } from "./tools.js";
 import type { AgentEvent, Provider } from "./types.js";
 import type { Workspace } from "./workspace.js";
+import type { RunControl } from "./control.js";
 
 export interface SpawnerOptions {
   browser: FloeBrowser;
@@ -17,6 +18,8 @@ export interface SpawnerOptions {
   onEvent?: (e: AgentEvent) => void;
   /** Shared wall-clock deadline; executors inherit the orchestrator's. */
   deadline?: number;
+  /** Shared pause/stop control; executors inherit the orchestrator's. */
+  control?: RunControl;
 }
 
 interface ExecutorOutcome {
@@ -95,6 +98,7 @@ async function runExecutor(name: string, spec: SpawnSpec, opts: SpawnerOptions):
       {
         maxSteps: Math.min(Math.max(1, spec.max_steps ?? opts.maxStepsDefault ?? 25), 60),
         deadline: opts.deadline,
+        control: opts.control,
         label: name,
         onEvent: opts.onEvent,
       },

@@ -1,0 +1,26 @@
+name: Build a learning path for a skill
+category: personal
+description: Assemble a sequenced, source-checked curriculum from what is actually available.
+integrations: [web, csv]
+requires_login: []
+schedule: null
+inputs:
+  - skill
+  - hours_per_week
+  - weeks
+prompt: |
+  Build a {weeks}-week path to learn {skill} at {hours_per_week} hours a week.
+
+  Find the real material first: official docs and tutorials, well-regarded
+  courses (free and paid), one or two books, and the canonical practice
+  resource for {skill}. Append to resources.csv: title, type, author or
+  publisher, cost, estimated hours, level, URL, and last updated — dropping
+  anything you cannot date, since stale material is the main risk here.
+
+  Then write path.md: a week-by-week plan that fits {hours_per_week}, each week
+  with its resource, the hours, and a concrete thing you should be able to
+  build or do by the end of it. Add a short "how to tell it is working" check
+  per phase.
+
+  Be honest if {weeks} is not enough time for {skill} and say what the plan
+  realistically gets you instead.

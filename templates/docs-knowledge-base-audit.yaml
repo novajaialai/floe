@@ -1,0 +1,24 @@
+name: Audit your help centre for rot
+category: docs
+description: Inventory every help article and flag the stale, thin and orphaned ones.
+integrations: [web, csv]
+requires_login: []
+schedule: null
+inputs:
+  - help_center_url
+  - stale_months
+prompt: |
+  Inventory the help centre at {help_center_url}.
+
+  Walk every category and article with paginate_extract into articles.csv
+  (dedupe on URL): section, title, URL, last-updated date if shown, word count
+  band, number of screenshots, and whether it links to any other article.
+
+  Then write kb-audit.md: articles not touched in {stale_months} months,
+  articles under ~150 words (probably stubs), orphans nothing links to,
+  duplicate topics covered by more than one article, and any article whose
+  screenshots show UI that no longer matches the product's current screens (say
+  which ones you actually compared).
+
+  Rank the fix list by section traffic if the site exposes any popularity
+  signal; if it does not, say so rather than inventing a priority order.

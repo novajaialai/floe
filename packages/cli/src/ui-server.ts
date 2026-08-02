@@ -5,13 +5,18 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  CATEGORIES,
   WorkflowStore,
+  findTemplate,
+  listTemplates,
   readConfig,
   readHistory,
   redactConfig,
+  renderTemplate,
   upcoming,
   writeConfig,
   type FloeConfig,
+  type Workflow,
 } from "@floe/engine";
 
 /**
@@ -161,6 +166,43 @@ export async function serveUi(opts: { port: number; open: boolean }): Promise<vo
         if (b.headless) args.push("--headless");
         const r = start(String(b.task), args);
         return json(res, 200, { id: r.id });
+      }
+      case "/api/templates":
+        // The gallery is a view of templates/*.yaml — same source as the CLI
+        // and the generated site, so the three can never drift.
+        return json(res, 200, { categories: CATEGORIES, templates: listTemplates() });
+      case "/api/template/run": {
+        const b = await body(req);
+        const tpl = findTemplate(String(b.id));
+        const task = renderTemplate(tpl, (b.inputs ?? {}) as Record<string, string>);
+        const args = ["events-run", task];
+        if (b.maxSteps) args.push("--max-steps", String(b.maxSteps));
+        if (b.parallel) args.push("--parallel", String(b.parallel));
+        if (b.headless) args.push("--headless");
+        const r = start(`template: ${tpl.name}`, args);
+        return json(res, 200, { id: r.id });
+      }
+      case "/api/template/save": {
+        const b = await body(req);
+        const tpl = findTemplate(String(b.id));
+        const inputs = (b.inputs ?? {}) as Record<string, string>;
+        const task = renderTemplate(tpl, inputs);
+        const name = String(b.name ?? tpl.id);
+        const existing = store.get(name);
+        const wf: Workflow = {
+          name,
+          task,
+          schedule: b.schedule ? String(b.schedule) : undefined,
+          maxSteps: Number(b.maxSteps ?? existing?.maxSteps ?? 60),
+          maxMinutes: existing?.maxMinutes,
+          parallel: Number(b.parallel ?? existing?.parallel ?? 3),
+          headless: b.headless === undefined ? (existing?.headless ?? true) : !!b.headless,
+          template: tpl.id,
+          inputs,
+          createdAt: existing?.createdAt ?? new Date().toISOString(),
+        };
+        store.save(wf); // throws on a bad cron before anything is written
+        return json(res, 200, { workflow: wf });
       }
       case "/api/workflow/run": {
         const b = await body(req);

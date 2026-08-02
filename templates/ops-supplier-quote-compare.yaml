@@ -1,0 +1,27 @@
+name: Compare supplier quotes for one item
+category: ops
+description: Price the same item across suppliers including shipping and lead time.
+integrations: [web, csv]
+requires_login: []
+schedule: null
+inputs:
+  - item
+  - quantity
+  - suppliers
+prompt: |
+  Price {quantity} of "{item}" across {suppliers}.
+
+  For each supplier: find the exact matching product (check the spec, not just
+  the title), read the price at {quantity} — many sites have quantity breaks —
+  and get shipping cost and lead time for a normal delivery. Append to
+  quotes.csv: supplier, product title, SKU or part number, unit price at that
+  quantity, quantity break used, shipping, lead time, total landed cost, URL,
+  and whether it is in stock.
+
+  Add to a cart only if that is the only way the site will show shipping, and
+  never proceed past the shipping-estimate step.
+
+  Write quotes-summary.md: cheapest landed, fastest, the one you would actually
+  order and why, and any supplier where the item you found was a near-match
+  rather than the exact spec. Near-matches must be flagged, not ranked as
+  equals.

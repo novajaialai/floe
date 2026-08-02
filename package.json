@@ -7,8 +7,12 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "tsc -b packages/engine packages/cli && npm run build:app",
+    "build": "tsc -b packages/engine packages/cli && npm run build:app && npm run lint:templates",
     "build:app": "npm --workspace @floe/app run build",
+    "lint:templates": "node scripts/lint-templates.mjs",
+    "test": "npm run lint:templates && node scripts/smoke-cron.mjs",
+    "test:browser": "node scripts/smoke-extract.mjs",
+    "site": "node scripts/build-site.mjs",
     "floe": "node packages/cli/dist/main.js"
   },
   "devDependencies": {

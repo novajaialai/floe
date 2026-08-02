@@ -1,0 +1,24 @@
+name: Turn a LinkedIn search into a prospect sheet
+category: sales
+description: Walk a saved LinkedIn people search and export deduped prospects with profile URLs.
+integrations: [linkedin.com, csv]
+requires_login: [linkedin.com]
+schedule: null
+inputs:
+  - search_url
+  - target_count
+prompt: |
+  Open {search_url} in my logged-in profile.
+
+  Walk the results with paginate_extract until you have {target_count} people
+  or the results run out, writing straight to linkedin-prospects.csv with the
+  profile URL as the dedupe key. Columns: name, headline, company, location,
+  profile URL.
+
+  Move at a human pace — do not hammer the next-page control, and stop
+  immediately if LinkedIn shows a rate-limit, checkpoint or "you've reached the
+  commercial use limit" screen. Never send a connection request or a message:
+  this task only reads.
+
+  Finish by reporting the row count, the page you stopped on, and whether you
+  stopped because the results ended or because the site pushed back.

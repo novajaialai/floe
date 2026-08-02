@@ -1,0 +1,24 @@
+name: Alert on new job postings
+category: monitoring
+description: Watch job boards for roles matching your filter and report only what is new.
+integrations: [job-boards, csv]
+requires_login: []
+schedule: "0 9 * * 1-5"
+inputs:
+  - search_urls
+  - filter
+prompt: |
+  Check {search_urls} for roles matching: {filter}.
+
+  Page each search with paginate_extract into jobs.csv, deduped on the job URL,
+  with a first_seen column set to today for rows that are new. Columns:
+  company, title, location, remote yes/no, salary if published, posted date,
+  source, URL.
+
+  Because the file is deduped and stamped, the report is simple: write
+  new-jobs.md listing only rows whose first_seen is today, best match first,
+  each with one line on why it matches {filter} and any obvious disqualifier
+  (wrong country, clearance required, on-site only).
+
+  Apply to nothing and save nothing to a profile. Report the total scanned and
+  the number that were new — if zero were new, say so with the scan count.

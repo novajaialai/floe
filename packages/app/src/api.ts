@@ -48,6 +48,18 @@ export interface HistoryEntry {
   trigger: string;
 }
 
+export interface Template {
+  id: string;
+  name: string;
+  category?: string;
+  description?: string;
+  prompt: string;
+  schedule?: string;
+  inputs: string[];
+  integrations: string[];
+  requiresLogin: string[];
+}
+
 export interface Config {
   provider?: string;
   model?: string;
@@ -89,6 +101,11 @@ export const getState = async (): Promise<AppState> => (await fetch("/api/state"
 export const startRun = (opts: Record<string, unknown>) => post<{ id: string }>("/api/run", opts);
 export const runWorkflow = (name: string, headed: boolean) =>
   post<{ id: string }>("/api/workflow/run", { name, headed });
+export const getTemplates = async (): Promise<{ categories: string[]; templates: Template[] }> =>
+  (await fetch("/api/templates")).json();
+export const runTemplate = (body: Record<string, unknown>) => post<{ id: string }>("/api/template/run", body);
+export const saveTemplateWorkflow = (body: Record<string, unknown>) =>
+  post<{ workflow: Workflow }>("/api/template/save", body);
 export const control = (cmd: "pause" | "resume" | "stop" | "kill") => post("/api/control", { cmd });
 export const saveConfig = (cfg: Record<string, unknown>) => post<{ config: Config }>("/api/config", cfg);
 export const reveal = (path: string) => post("/api/reveal", { path });

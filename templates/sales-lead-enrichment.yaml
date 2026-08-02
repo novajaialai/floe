@@ -1,0 +1,26 @@
+name: Enrich a list of companies from their websites
+category: sales
+description: Fan out across company sites to fill in positioning, pricing and contact details.
+integrations: [web, csv]
+requires_login: []
+schedule: null
+inputs:
+  - companies
+  - fields
+prompt: |
+  Enrich these companies: {companies}.
+
+  Split them across parallel executors with spawn_agents (2-3 at a time). Give
+  each executor a slice of the list and this instruction: for each company,
+  find the official site, then visit the home page, the pricing page and the
+  about/contact page, and append one row per company to your own CSV with:
+  company, website, one-line positioning, {fields}.
+
+  Rules for every executor: append each row as soon as that company is done —
+  never hold rows until the end; write "unknown" for a field the site does not
+  publish rather than guessing; record the URL you took each fact from.
+
+  When the executors report back, check their [verified] file receipts, merge
+  every executor CSV into enriched.csv (dedupe by company), and write
+  enrichment-report.md: rows written, fields with the worst fill rate, and the
+  companies where you could not find an official site at all.

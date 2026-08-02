@@ -1,0 +1,24 @@
+name: Deep-dive one company
+category: research
+description: Everything publicly knowable about one company, in a sourced report.
+integrations: [web]
+requires_login: []
+schedule: null
+inputs:
+  - company
+  - questions
+prompt: |
+  Deep-dive {company}. The questions that matter: {questions}.
+
+  Work in passes and keep notes.md updated with a source URL for every fact as
+  you collect it: (1) their own site — product, pricing, customers, careers;
+  (2) what third parties say — reviews, comparisons, press; (3) signals —
+  hiring, changelog or release cadence, recent announcements.
+
+  Then write deep-dive.md: a two-paragraph summary a busy person can read, a
+  facts table (founded, HQ, size signal, funding/ownership, pricing model,
+  named customers), an answer to each of {questions} with its source link, and
+  a "confidence and gaps" section stating which answers rest on one source
+  only.
+
+  Any number you cannot attribute to a URL does not go in the report.

@@ -1,0 +1,23 @@
+name: Source candidates from a search
+category: recruiting
+description: Turn a LinkedIn or GitHub people search into a screened candidate sheet.
+integrations: [linkedin.com, github.com, csv]
+requires_login: [linkedin.com]
+schedule: null
+inputs:
+  - search_url
+  - must_have
+  - target_count
+prompt: |
+  Source candidates from {search_url} for a role that must have: {must_have}.
+
+  Page the results with paginate_extract into candidates.csv (dedupe on profile
+  URL): name, headline/current role, company, location, profile URL.
+
+  Then go back over the rows and add two columns by opening each profile:
+  "match" (yes / maybe / no against {must_have}) and "evidence" (the specific
+  line on their profile that decided it). Stop once you have {target_count}
+  rows marked yes or maybe.
+
+  Read only. Do not connect, follow, message or star anything. Report the
+  yes/maybe/no counts and any profile that would not load.

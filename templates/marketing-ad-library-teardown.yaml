@@ -1,0 +1,24 @@
+name: Tear down a competitor's live ads
+category: marketing
+description: Pull a brand's running ads from public ad libraries into a creative CSV.
+integrations: [facebook.com/ads/library, adstransparency.google.com, csv]
+requires_login: []
+schedule: null
+inputs:
+  - brand
+  - platforms
+prompt: |
+  Find the ads {brand} is currently running on {platforms} using the public ad
+  transparency libraries.
+
+  For each library, search the brand, then page the results with
+  paginate_extract into ads.csv (dedupe on ad id or ad URL): platform, ad id,
+  first seen date, format (image / video / carousel / text), the headline and
+  primary text as written, the CTA button, and the landing URL.
+
+  Then write ad-teardown.md: the hooks they repeat, the offer(s), how many
+  variants of the top concept are live, which creative has been running longest
+  (a proxy for what works), and the landing pages behind each angle.
+
+  Quote their copy verbatim in the CSV — do not paraphrase — and note any ad
+  you could only partly read.

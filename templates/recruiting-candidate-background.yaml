@@ -1,0 +1,24 @@
+name: Public-work brief on a candidate
+category: recruiting
+description: Read a candidate's public work (portfolio, GitHub, writing) into an interview brief.
+integrations: [github.com, web]
+requires_login: []
+schedule: null
+inputs:
+  - candidate_links
+  - role
+prompt: |
+  Review the public work at {candidate_links} for a {role} hire.
+
+  Visit each link. For code hosts, look at the repos they actually own: what
+  they build, how recently, how large, and how the code reads. For writing or
+  portfolios, read two or three pieces end to end, not just titles.
+
+  Write candidate-brief.md: what their public work shows they can do, the
+  strongest single artifact with a link, gaps relative to {role}, and 5
+  interview questions that only make sense to ask this person.
+
+  Stick to what they published themselves under these links. Do not go hunting
+  for personal social accounts, addresses or anything unrelated to the work,
+  and do not speculate about protected characteristics. If a link is dead or
+  private, say so.

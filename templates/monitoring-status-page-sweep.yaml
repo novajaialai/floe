@@ -1,0 +1,23 @@
+name: Sweep your vendors' status pages
+category: monitoring
+description: Check every dependency's status page and report only what is degraded.
+integrations: [status-pages, csv]
+requires_login: []
+schedule: "*/15 * * * *"
+inputs:
+  - status_urls
+prompt: |
+  Check the status pages at {status_urls}.
+
+  For each, record in status.csv: timestamp, vendor, overall status, any
+  component that is not fully operational, the active incident title if there
+  is one, and the URL. Read the component list, not just the green banner —
+  a page often says "all systems operational" above a degraded sub-component.
+
+  Then write status-now.md: DOWN or DEGRADED vendors first with the incident
+  title, start time and latest update quoted; then any vendor in scheduled
+  maintenance within the next 24 hours; then a single line listing everyone
+  who is healthy.
+
+  If a status page itself fails to load, report that vendor as "unknown" — an
+  unreachable status page is not the same as a healthy one.

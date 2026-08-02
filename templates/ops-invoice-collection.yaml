@@ -1,0 +1,25 @@
+name: Collect this month's vendor invoices
+category: ops
+description: Log into each vendor's billing page, download the latest invoice, and reconcile the total.
+integrations: [vendor-billing-portals, csv]
+requires_login: [vendor-billing-portals]
+schedule: "0 9 1 * *"
+inputs:
+  - vendor_urls
+  - month
+prompt: |
+  Collect the {month} invoices from these billing portals: {vendor_urls}, using
+  my logged-in profile.
+
+  For each vendor: open the billing or invoices page, find the invoice for
+  {month}, download the PDF into the workspace, and append a row to
+  invoices.csv: vendor, invoice number, invoice date, period covered, amount,
+  currency, payment status, and the saved filename.
+
+  Never change a plan, cancel anything, update a payment method or click a pay
+  button. Read and download only.
+
+  Finish with invoices-summary.md: total by currency, the vendors whose invoice
+  was not available yet, the ones where the session had expired and needs a
+  fresh login, and any amount that differs from the previous month by more than
+  10%.

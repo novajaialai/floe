@@ -1,0 +1,25 @@
+name: Build a prospect list from a directory
+category: sales
+description: Page a business directory or search result into a deduped prospect CSV.
+integrations: [any-directory-site, csv]
+requires_login: []
+schedule: null
+inputs:
+  - directory_url
+  - target_count
+prompt: |
+  Build a prospect list from {directory_url}.
+
+  Use paginate_extract on the listing page — the rows MUST be written by the
+  tool, not transcribed from page text — with prospects.csv as the output and
+  the business name as the dedupe key. Let it follow pagination / "load more"
+  until you have at least {target_count} rows or the listing is exhausted.
+
+  Capture every column the listing actually shows (name, category, address,
+  phone, website, rating, review count). Do not invent columns the site does
+  not have.
+
+  Then read prospects.csv back and write prospects-notes.md: total rows, the
+  columns that were populated for most rows, the ones that were mostly empty,
+  how many pages you walked, and any page that failed to load. If the site
+  blocked pagination, say so plainly rather than padding the file.

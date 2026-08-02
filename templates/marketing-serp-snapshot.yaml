@@ -1,0 +1,24 @@
+name: Snapshot the SERP for your keywords
+category: marketing
+description: Capture who ranks for a keyword set and how the results change week to week.
+integrations: [web, csv]
+requires_login: []
+schedule: "0 7 * * 2"
+inputs:
+  - keywords
+  - search_engine
+prompt: |
+  For each keyword in {keywords}, search on {search_engine} and capture the
+  first page of results.
+
+  Append to serp.csv, one row per result: date, keyword, position, title,
+  domain, URL, result type (organic / ad / featured snippet / video / people
+  also ask / local pack). Write rows as you finish each keyword, not at the
+  end. Do not click through to the results — this is a rankings snapshot.
+
+  Compare with any serp.csv already in the workspace and write serp-changes.md:
+  domains that entered or left the top 10 per keyword, and any keyword where
+  the SERP layout itself changed (a pack or snippet appeared or vanished).
+
+  If the engine shows a consent wall or a captcha, stop, say which keyword you
+  reached, and do not attempt to work around it.

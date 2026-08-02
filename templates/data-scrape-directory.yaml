@@ -1,5 +1,7 @@
 name: Scrape a directory into a spreadsheet
 category: data
+description: Page through every listing page of a directory and append deduped rows to a CSV.
+requires_login: []
 integrations: [any-directory-site]
 schedule: null
 prompt: |

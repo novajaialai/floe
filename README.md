@@ -4,9 +4,13 @@
 
 Floe is an open replication of the capability behind commercial AI browsers (Polar, etc.): long-horizon browser automation on your own accounts, with no credits, no billing, and no cloud dependency.
 
-## Status: v0.5 — engine + desktop app (early)
+## Status: v0.6 — engine + desktop app + template library (early)
 
-**What's new in v0.5** — Floe has a face, and a protocol behind it. `floe events-run "<task>"` runs an agent headlessly and emits **every event as JSONL on stdout** while accepting `{"cmd":"pause"|"resume"|"stop"|"kill"}` on stdin — the seam the app talks to, and a stable API for anyone embedding Floe in their own tool. Pause and stop are honest: pause blocks *between* steps (never mid-click), and stop is a graceful wrap-up (the agent is told to save and call `done`), not a kill. On top of it sits the desktop app — command bar, streaming timeline, pause/resume/stop/kill, a workflows tab with schedules + run history, and a settings tab that writes `~/.floe/config.json`, which the CLI reads too (env vars still win), so you never have to export `FLOE_*` by hand again.
+**What's new in v0.6** — 53 templates, one source of truth. Every template is a plain YAML file in `templates/` — name, description, category, integrations, `requires_login`, optional cron default, `{placeholder}` inputs and the prompt itself — and that single file feeds the CLI (`floe templates list|show`, `floe run --template <id>`), the app's **Templates** tab (filterable grid → detail view with live-substituted prompt, *Run now* / *Save as workflow*) and the generated static site (`npm run site` → `site/dist`, zero dependencies, no CDN, light and dark). `npm test` lints the library: schema fields, category in the fixed set, every `{placeholder}` declared as an input *and* every input used, cron expressions that actually parse, unique names, filename convention. The prompts are written to Floe's strengths — `paginate_extract` for lists, `spawn_agents` for multi-site fan-out, incremental CSV appends, and an explicit "say what you could not get" clause so a template reports its gaps instead of padding them.
+
+![The template gallery](docs/screenshots/floe-app-templates.jpg)
+
+**v0.5** — Floe has a face, and a protocol behind it. `floe events-run "<task>"` runs an agent headlessly and emits **every event as JSONL on stdout** while accepting `{"cmd":"pause"|"resume"|"stop"|"kill"}` on stdin — the seam the app talks to, and a stable API for anyone embedding Floe in their own tool. Pause and stop are honest: pause blocks *between* steps (never mid-click), and stop is a graceful wrap-up (the agent is told to save and call `done`), not a kill. On top of it sits the desktop app — command bar, streaming timeline, pause/resume/stop/kill, a workflows tab with schedules + run history, and a settings tab that writes `~/.floe/config.json`, which the CLI reads too (env vars still win), so you never have to export `FLOE_*` by hand again.
 
 ![Floe running a task](docs/screenshots/floe-app-running.jpg)
 
@@ -17,6 +21,7 @@ Floe is an open replication of the capability behind commercial AI browsers (Pol
 **v0.2** — extraction stopped being the model's job. `extract_table` finds the page's dominant repeated structure (a regular table, or listing cards / feed items / search results, segmented by repeated markers) with pure DOM heuristics, and `paginate_extract` walks pagination writing deduped rows straight to a CSV in code. On the Hacker News 3-page benchmark that took the run from 15 steps of hand-transcribed rows to **4 steps, 90 rows, zero duplicates**. Element ids are also sticky now, so an id stays glued to its element across snapshots instead of being reassigned from 0 (the stale-click bug in v0.1).
 
 Working today:
+- **Template library**: 53 templates across 10 categories in `templates/*.yaml` — the in-app gallery, `floe templates list|show`, `floe run --template <id>` and the static site all render from the same files
 - **Desktop app**: command bar, live event timeline, pause/resume/stop/kill, workflows + run history, settings (`floe ui`, or the Tauri window)
 - **Headless runner protocol**: `floe events-run` / `floe events-workflow` — JSONL events out, control commands in
 - Persistent Chromium profile (log in once; sessions persist across tasks)
@@ -100,6 +105,58 @@ floe events-run "Save the top 10 HN stories to top.csv" --max-steps 20
 
 `floe events-workflow <name>` does the same for a saved workflow and writes its history line. Anything that can spawn a process and read lines can drive Floe — that includes the two shells here, and it is the intended way to embed the engine.
 
+## Templates
+
+`templates/` holds 53 ready-to-run tasks across ten categories — sales, recruiting, marketing, data, research, ops, engineering, docs, personal, monitoring. Each is one YAML file, and it is the only copy: the CLI, the app's gallery and the generated site all render from it.
+
+```yaml
+name: Export a paginated search to CSV
+category: data
+description: Point Floe at any paginated result set and get every row, deduped, in a file.
+integrations: [web, csv]
+requires_login: []          # domains the run needs you already logged into
+schedule: null              # a cron default, for templates that want to run themselves
+inputs:
+  - results_url
+  - key_column
+  - max_pages
+prompt: |
+  Export the results at {results_url}. …
+```
+
+```bash
+floe templates list                     # the whole library, grouped by category
+floe templates list --category research
+floe templates show data-price-tracker  # full prompt, inputs, and the commands to run it
+
+floe run --template data-paginated-search-export \
+  --input results_url=https://quotes.toscrape.com/ --input key_column=quote --input max_pages=3
+
+# or save it as a scheduled workflow
+floe workflow save quotes --template data-paginated-search-export \
+  --input results_url=... --input key_column=quote --input max_pages=3 --schedule "0 7 * * *"
+```
+
+In the app, the **Templates** tab is the same library: filter by category or search, open one, fill its inputs (the prompt preview substitutes them as you type), then *Run now* or *Save as workflow* with a schedule.
+
+![A template, opened](docs/screenshots/floe-app-template-detail.jpg)
+
+**Templates that need an account** are marked `requires_login` and carry a `login` badge — they read the site through your own logged-in `~/.floe/profile`, so log in there once first. They are written to read, not to act: none of them sends a message, submits an application, places an order or pays an invoice, and the ones that touch a form stop after the first row for you to check.
+
+`npm test` lints the library — required fields, a category from the fixed set, `{placeholder}` ↔ `inputs` agreement in both directions, cron expressions that parse, unique names, filename convention — so a broken template fails the build, not a 7am run.
+
+### The site
+
+```bash
+npm run site        # → site/dist  (landing page, template index, one page per template)
+```
+
+`scripts/build-site.mjs` is ~450 lines of plain Node with no dependencies: it reads `templates/*.yaml` and lifts the landing copy straight out of this README, so the site cannot drift from the product. Hand-rolled CSS, light by default and glacial dark under `prefers-color-scheme`, category filtering in ~20 lines of vanilla JS, copy buttons on every prompt. The build finishes by resolving every internal `href`/`src` against the output tree — a broken link fails it. Nothing is deployed anywhere: `site/dist` is the deliverable.
+
+| | |
+|---|---|
+| ![site landing](docs/screenshots/floe-site-landing-light.jpg) | ![site templates index](docs/screenshots/floe-site-templates.jpg) |
+
 ## Workflows and schedules
 
 A workflow is a saved task (plus its options and an optional cron schedule), stored as one JSON file in `~/.floe/workflows/`.
@@ -148,6 +205,8 @@ node scripts/smoke-events.mjs
 ```
 
 Live-verified over a local OpenAI-compatible gateway (sonnet orchestrating, haiku executors):
+- **Templates run**: `floe run --template data-paginated-search-export` (quotes.toscrape.com, 3 pages) finished in **4 steps / 0.8 min** with 30 deduped rows in `results.csv` — the agent called `paginate_extract` on step 3 and reported *why* it stopped (page cap, not exhaustion). `floe run --template research-company-deep-dive` (Ollama) ran **17 steps / 16.9 min** and wrote `notes.md`, `models.csv` (via `paginate_extract`), a GitHub-stats CSV and a 6.5KB `deep-dive.md` — including the template's mandated gaps section, which correctly refused an executor's unverified "$10M Series A" claim because it contradicted the sourced figure and never persisted to disk.
+- **Template lint + site build are part of the build**: `npm test` lints all 53 templates; `npm run site` renders 55 pages and resolves all 607 internal links.
 - **Pause is real**: `smoke-events.mjs` paused a live run at step 2, watched 15s of silence (zero step events), resumed, and the agent finished normally (2 steps, exit 0).
 - **Stop is graceful**: a second run was stopped mid-flight; the agent was told to wrap up, wrote an honest summary ("…Stopped as requested before any further work") and exited through the normal `end` event with its workspace intact.
 - **The app runs real tasks**: the screenshots above are a live run started from the command bar (paused and resumed on camera), and the workflows tab showing the scheduled `cnn-brief` workflow with its next fire time and previous scheduled run. The native window shot is a Hacker News task run from the packaged `Floe.app`.
@@ -171,7 +230,9 @@ packages/engine   agent loop, browser layer (playwright-core/CDP), tools, provid
                   cron + scheduler + workflow store
 packages/cli      `floe run|ui|events-run|events-workflow|workflow|schedule|history`
 packages/app      React control UI (Vite) + a thin Tauri shell (src-tauri)
-templates/        task templates (YAML) — prompt library, generates the gallery
+templates/        53 task templates (YAML) — the source of truth for gallery, CLI and site
+site/dist         generated static site (scripts/build-site.mjs, zero dependencies)
+scripts/          smoke tests, template lint, site build, screenshot drivers
 ```
 
 State lives in `~/.floe/` (override with `FLOE_HOME`): `profile/` (Chrome), `config.json`, `workflows/*.json`,
@@ -195,7 +256,7 @@ Design notes:
 3. ✅ Orchestrator/executor split + parallel windows, provider retry/backoff, soft time budget
 4. ✅ Scheduler: saved workflows on cron ("morning briefing at 7am"), run history, macOS LaunchAgent with sleep catch-up
 5. ✅ Desktop app: headless runner protocol (JSONL + control commands), command bar, live timeline, pause/resume/stop/kill, workflows + history + settings, in a Tauri window or a localhost tab
-6. Template library + site
+6. ✅ Template library (53 templates, 10 categories) + lint + in-app gallery + generated static site
 7. Eval harness (WebVoyager subset + real-work tasks)
 
 ## License

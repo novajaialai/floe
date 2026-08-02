@@ -1,0 +1,25 @@
+name: Benchmark comp for a role
+category: recruiting
+description: Pull published salary ranges for one role across several sources into a range table.
+integrations: [web, csv]
+requires_login: []
+schedule: null
+inputs:
+  - role
+  - location
+prompt: |
+  Benchmark pay for a {role} in {location}.
+
+  Check several kinds of source, not one: public salary databases, job postings
+  that publish a range (pay-transparency states usually do), and any recent
+  published survey. Use extract_table where a source has a real table.
+
+  Append one row per data point to comp.csv: source, source URL, role title as
+  written there, location, low, high, base or total comp, sample size or
+  posting date, and the date you read it. Never average numbers into the CSV —
+  the CSV holds raw observations only.
+
+  Then write comp-summary.md: the range you would quote, the median of the
+  observations, how much the sources disagree, and which sources you would
+  trust least and why. Flag any figure that is total comp being compared
+  against base.

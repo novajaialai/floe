@@ -1,5 +1,7 @@
 name: Deep-dive a product category into a market map
 category: research
+description: Map a product category's vendors, pricing and positioning into a sourced report.
+requires_login: []
 integrations: [web]
 schedule: null
 prompt: |

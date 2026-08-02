@@ -1,0 +1,23 @@
+name: Check stock levels across your storefronts
+category: ops
+description: Read live stock on your own listings and flag what needs reordering.
+integrations: [storefront-admin, csv]
+requires_login: [storefront-admin]
+schedule: "0 7 * * 1-5"
+inputs:
+  - admin_urls
+  - reorder_threshold
+prompt: |
+  Open the inventory pages at {admin_urls} in my logged-in profile.
+
+  Use extract_table to pull the stock grid into stock.csv: date, channel, SKU,
+  product name, quantity on hand, quantity inbound if shown, and price. Page
+  through the whole catalogue rather than the first screen.
+
+  Then write restock.md: every SKU at or below {reorder_threshold}, sorted by
+  how far below; anything that hit zero since the last stock.csv in the
+  workspace; and anything overstocked relative to its listed sales velocity if
+  the admin shows it.
+
+  Change nothing — no edits to quantities, prices or listings. If a channel's
+  session has expired, name it instead of quietly reporting only the others.

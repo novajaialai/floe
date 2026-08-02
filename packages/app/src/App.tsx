@@ -13,8 +13,9 @@ import {
   type RunState,
 } from "./api";
 import { Timeline } from "./Timeline";
+import { TemplatesView } from "./Templates";
 
-type Tab = "run" | "workflows" | "settings";
+type Tab = "run" | "templates" | "workflows" | "settings";
 
 export function App() {
   const [tab, setTab] = useState<Tab>("run");
@@ -78,7 +79,7 @@ export function App() {
           </svg>
           <span>floe</span>
         </div>
-        {(["run", "workflows", "settings"] as Tab[]).map((t) => (
+        {(["run", "templates", "workflows", "settings"] as Tab[]).map((t) => (
           <button key={t} className={`tab ${tab === t ? "on" : ""}`} onClick={() => setTab(t)}>
             {t}
           </button>
@@ -100,6 +101,16 @@ export function App() {
             events={events}
             onRun={(opts) => launch(() => startRun(opts))}
             onControl={send}
+          />
+        )}
+        {tab === "templates" && (
+          <TemplatesView
+            busy={!!run && run.state !== "finished"}
+            onLaunched={() => {
+              setEvents([]);
+              setTab("run");
+              void refresh();
+            }}
           />
         )}
         {tab === "workflows" && (

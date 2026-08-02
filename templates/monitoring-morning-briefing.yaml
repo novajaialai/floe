@@ -1,5 +1,7 @@
 name: Morning briefing from your open tabs
 category: monitoring
+description: Visit your logged-in sites each morning and write one triaged briefing file.
+requires_login: [any-logged-in-site]
 integrations: [any-logged-in-site]
 schedule: "0 7 * * *"
 prompt: |

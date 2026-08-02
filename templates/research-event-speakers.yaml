@@ -1,0 +1,24 @@
+name: Extract an event's speakers and agenda
+category: research
+description: Turn a conference site into a speaker and session table you can work from.
+integrations: [web, csv]
+requires_login: []
+schedule: null
+inputs:
+  - event_url
+prompt: |
+  Extract the programme from {event_url}.
+
+  Use extract_table / paginate_extract across the agenda and speakers pages to
+  build two files:
+  - sessions.csv: day, start time, track or room, session title, format, and
+    the speaker names as listed.
+  - speakers.csv: name, title, company, session(s) they appear in, and their
+    profile URL on the event site.
+
+  Many event sites hide details behind a modal — open each session or speaker
+  card if the list view lacks the fields, and say so in your report if that
+  made the run long.
+
+  Finish with agenda-notes.md: which companies have the most stage time, the
+  themes the track names imply, and any session with no speaker announced yet.

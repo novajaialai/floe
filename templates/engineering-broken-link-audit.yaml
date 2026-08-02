@@ -1,0 +1,24 @@
+name: Find the broken links on a site
+category: engineering
+description: Crawl a docs or marketing site and report every dead link with the page it sits on.
+integrations: [web, csv]
+requires_login: []
+schedule: null
+inputs:
+  - site_url
+  - max_pages
+prompt: |
+  Crawl {site_url}, up to {max_pages} pages, staying on that domain.
+
+  Keep a queue in the workspace so the crawl survives an interruption. For each
+  page: record it in pages.csv (URL, title, status, number of links), collect
+  every link, and follow the internal ones you have not seen.
+
+  For each link that fails — 404, 5xx, a timeout, or a page whose body is an
+  error message despite a 200 — append to broken.csv: source page, link text,
+  target URL, and what happened. Check external links once each without
+  crawling into them.
+
+  Write link-audit.md: pages crawled, links checked, broken count, the source
+  pages with the most breakage, and any redirect chain longer than two hops.
+  If you stopped at {max_pages}, say what fraction of the site that covered.

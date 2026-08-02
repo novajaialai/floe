@@ -6,7 +6,8 @@ import {
   appendHistory,
   applyConfig,
   floeHome,
-  loadTemplate,
+  findTemplate,
+  listTemplates,
   readHistory,
   renderTemplate,
   runStamp,
@@ -27,6 +28,9 @@ function usage(): never {
 
 Usage:
   floe run "<task>" [options]                 Run a one-off task
+  floe run --template <id> --input k=v ...    Run a template from the library
+  floe templates list [--category <c>]        The shipped template library
+  floe templates show <id>                    One template: full prompt + inputs
   floe workflow save <name> [...]             Save a reusable (optionally scheduled) workflow
   floe workflow list | show <name> | rm <name>
   floe workflow run <name> [--headed]         Run a saved workflow now
@@ -89,6 +93,8 @@ async function main() {
   switch (args[0]) {
     case "run":
       return cmdRun();
+    case "templates":
+      return cmdTemplates();
     case "workflow":
       return cmdWorkflow();
     case "history":
@@ -128,10 +134,61 @@ async function main() {
   }
 }
 
+/** --input k=v (repeatable) → {k: v} */
+function inputMap(): Record<string, string> {
+  return Object.fromEntries(
+    multi("--input").map((kv) => {
+      const i = kv.indexOf("=");
+      if (i < 0) throw new Error(`--input must be key=value (got "${kv}")`);
+      return [kv.slice(0, i), kv.slice(i + 1)];
+    }),
+  );
+}
+
+function cmdTemplates() {
+  const sub = args[1] ?? "list";
+  if (sub === "list") {
+    const cat = flag("--category");
+    const all = listTemplates().filter((t) => !cat || t.category === cat);
+    if (!all.length) return console.log(cat ? `no templates in category "${cat}"` : "no templates found");
+    let current = "";
+    for (const t of all) {
+      if (t.category !== current) {
+        current = t.category ?? "";
+        console.log(`\n${current.toUpperCase()}`);
+      }
+      const login = t.requiresLogin.length ? "  [login]" : "";
+      console.log(`  ${t.id.padEnd(36)} ${t.description ?? t.name}${login}`);
+    }
+    console.log(`\n${all.length} templates · floe templates show <id>`);
+    return;
+  }
+  if (sub === "show") {
+    if (!args[2]) usage();
+    const t = findTemplate(args[2]);
+    console.log(`${t.name}\n${"─".repeat(t.name.length)}`);
+    console.log(`id           ${t.id}`);
+    console.log(`category     ${t.category ?? "—"}`);
+    console.log(`description  ${t.description ?? "—"}`);
+    console.log(`integrations ${t.integrations.join(", ") || "—"}`);
+    if (t.requiresLogin.length) console.log(`needs login  ${t.requiresLogin.join(", ")}`);
+    console.log(`schedule     ${t.schedule ?? "manual"}`);
+    console.log(`inputs       ${t.inputs.join(", ") || "none"}`);
+    console.log(`\n${t.prompt}\n`);
+    const example = t.inputs.map((i) => `--input ${i}=...`).join(" ");
+    console.log(`run:  floe run --template ${t.id} ${example}`);
+    console.log(`save: floe workflow save my-${t.id} --template ${t.id} ${example}`);
+    return;
+  }
+  usage();
+}
+
 async function cmdRun() {
-  if (!args[1]) usage();
+  const tplRef = flag("--template");
+  const task = tplRef ? renderTemplate(findTemplate(tplRef), inputMap()) : args[1];
+  if (!task || task.startsWith("--")) usage();
   const r = await runTask({
-    task: args[1],
+    task,
     maxSteps: num("--max-steps"),
     maxMinutes: num("--max-minutes"),
     parallel: num("--parallel"),
@@ -153,14 +210,8 @@ async function cmdWorkflow() {
       let schedule = flag("--schedule");
       let inputs: Record<string, string> | undefined;
       if (tplFile) {
-        const tpl = loadTemplate(tplFile);
-        inputs = Object.fromEntries(
-          multi("--input").map((kv) => {
-            const i = kv.indexOf("=");
-            if (i < 0) throw new Error(`--input must be key=value (got "${kv}")`);
-            return [kv.slice(0, i), kv.slice(i + 1)];
-          }),
-        );
+        const tpl = findTemplate(tplFile);
+        inputs = inputMap();
         task = renderTemplate(tpl, inputs);
         schedule ??= tpl.schedule;
       }
@@ -181,7 +232,7 @@ async function cmdWorkflow() {
         parallel: num("--parallel") ?? existing?.parallel ?? 3,
         // Unattended by default: a scheduled run has no one watching.
         headless: has("--headed") ? false : (has("--headless") ? true : existing?.headless ?? true),
-        template: tplFile ? basename(tplFile) : existing?.template,
+        template: tplFile ? basename(tplFile).replace(/\.ya?ml$/, "") : existing?.template,
         inputs: inputs ?? existing?.inputs,
         createdAt: existing?.createdAt ?? new Date().toISOString(),
       };

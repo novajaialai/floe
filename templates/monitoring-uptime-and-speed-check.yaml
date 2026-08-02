@@ -1,0 +1,25 @@
+name: Check your own site loads and works
+category: monitoring
+description: Walk the critical pages of your site, time them, and catch anything broken.
+integrations: [web, csv]
+requires_login: []
+schedule: "0 */6 * * *"
+inputs:
+  - site_url
+  - critical_paths
+prompt: |
+  Check {site_url}, specifically these paths: {critical_paths}.
+
+  For each path: navigate, wait for the page to settle, and record in
+  health.csv: timestamp, path, HTTP-visible outcome, roughly how long until the
+  main content appeared, whether the page's key element is present (the form,
+  the pricing table, the login button — whatever that page exists for), and
+  whether any obvious error text is on screen.
+
+  Take a screenshot of any page that fails a check.
+
+  Then write health.md: FAILING paths first with what was missing and the
+  screenshot filename; then paths noticeably slower than in the previous
+  health.csv; then a one-line all-clear for the rest. Do not submit forms or
+  create accounts — check that the element is there and works to the click, not
+  through it.

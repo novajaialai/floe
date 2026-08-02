@@ -1,0 +1,26 @@
+name: Watch fares for a trip
+category: personal
+description: Check a route's prices daily across dates and tell you when to book.
+integrations: [flight-search-sites, csv]
+requires_login: []
+schedule: "0 7 * * *"
+inputs:
+  - route
+  - date_window
+  - max_price
+prompt: |
+  Check fares for {route} across {date_window}.
+
+  Search on at least two sites so one site's caching cannot fool you. For each
+  date you check, append to fares.csv: date checked, outbound date, return
+  date, airline, stops, total duration, price, currency, fare class or baggage
+  note, site, and the URL of the result.
+
+  Then compare with earlier rows in fares.csv and write fare-watch.md: the
+  cheapest option today, how it compares to the cheapest you have seen, the
+  trend over the last week, and a clear BOOK or WAIT with the reason. Call out
+  anything at or under {max_price} at the top.
+
+  Search only — never start a booking or enter passenger details. If a site
+  demands a captcha or shows prices only after a login, note which one and use
+  the others.

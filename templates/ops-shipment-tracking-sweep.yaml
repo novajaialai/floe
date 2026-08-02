@@ -1,0 +1,23 @@
+name: Sweep tracking numbers for exceptions
+category: ops
+description: Check a list of tracking numbers across carriers and surface only what is going wrong.
+integrations: [carrier-sites, csv]
+requires_login: []
+schedule: "0 8 * * 1-5"
+inputs:
+  - tracking_file
+prompt: |
+  Read {tracking_file} (tracking number, carrier, order reference) from the
+  workspace and check each shipment on the carrier's public tracking page.
+
+  Append to tracking.csv: date checked, order reference, carrier, tracking
+  number, current status, last scan location, last scan time, promised
+  delivery date, and exception yes/no.
+
+  Then write exceptions.md — the only file anyone will actually read. List
+  only: delivered-but-disputed, exception or failed-delivery scans, shipments
+  with no scan in over 48 hours, and anything past its promised date. One line
+  each, with the order reference first.
+
+  If a tracking number returns "not found", that is an exception too, not a
+  skip. Report how many of each you found, including zeros.

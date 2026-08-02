@@ -1,0 +1,26 @@
+name: Fill a form once per row of a CSV
+category: ops
+description: Drive a repetitive web form from a spreadsheet, one row at a time, with a receipt log.
+integrations: [web, csv]
+requires_login: [target-site]
+schedule: null
+inputs:
+  - form_url
+  - source_file
+  - field_map
+prompt: |
+  Read {source_file} from the workspace and submit {form_url} once per row.
+  Field mapping: {field_map}.
+
+  Do the FIRST row only, then stop and describe exactly what you filled and
+  what the confirmation said. Continue with the remaining rows only if the
+  first submission clearly succeeded.
+
+  For every row, append to submissions.csv: row number, the key field, the
+  timestamp, submitted yes/no, and the confirmation number or message. Write
+  that line immediately after each submission so an interruption never leaves
+  you unsure what went out.
+
+  If a row is missing a required field, skip it and log "skipped: missing
+  <field>" — never invent a value to satisfy a form. Stop the whole run if two
+  rows in a row fail.

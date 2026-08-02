@@ -1,0 +1,26 @@
+name: Scan the recent literature on a topic
+category: research
+description: Sweep preprint and journal search for recent papers and summarise the state of play.
+integrations: [arxiv.org, pubmed.ncbi.nlm.nih.gov, scholar.google.com, csv]
+requires_login: []
+schedule: null
+inputs:
+  - topic
+  - months
+  - count
+prompt: |
+  Scan the literature on {topic} from the last {months} months. Aim for
+  {count} papers.
+
+  Search the relevant repositories, then page the results with
+  paginate_extract into papers.csv (dedupe on title): title, authors, venue or
+  preprint server, date, URL, and citation count if the source shows one.
+
+  Open the abstracts of the {count} most relevant and add two columns: the
+  claim in one sentence, and the method in one phrase. Read the abstract — do
+  not infer the claim from the title.
+
+  Write literature-scan.md: what the field agrees on, the live disagreements,
+  the 3 papers to read first and why, and what nobody in this set has looked
+  at. Note explicitly if a source was paywalled so only the abstract informed
+  your entry.

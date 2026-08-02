@@ -1,0 +1,23 @@
+name: Turn an API reference into a table
+category: docs
+description: Extract every endpoint, parameter and auth requirement from API docs into CSV.
+integrations: [web, csv]
+requires_login: []
+schedule: null
+inputs:
+  - docs_url
+prompt: |
+  Read the API reference at {docs_url}.
+
+  Build endpoints.csv, one row per endpoint: method, path, summary, auth
+  required, rate limit if documented, and the docs URL of that endpoint. Then
+  params.csv, one row per parameter: endpoint path, parameter name, in (path /
+  query / body / header), type, required yes/no, default, and description.
+
+  Many reference sites render one endpoint per navigation click — walk the
+  sidebar systematically and keep a checklist in notes.md of which sections
+  are done, so an interrupted run resumes instead of restarting.
+
+  Finish with api-notes.md: endpoint count, the auth scheme in one paragraph,
+  pagination style, error format, and anything the docs leave undefined. Copy
+  types and defaults exactly as documented — do not normalise them.

@@ -1,0 +1,24 @@
+name: Check CI and deploy status
+category: engineering
+description: Read your CI dashboard and report red builds, flaky jobs and stuck deploys.
+integrations: [ci-dashboard, csv]
+requires_login: [ci-dashboard]
+schedule: "*/30 8-18 * * 1-5"
+inputs:
+  - dashboard_url
+  - branches
+prompt: |
+  Open {dashboard_url} in my logged-in profile and read the recent runs for
+  {branches}.
+
+  Record in builds.csv: branch, pipeline, run number, status, duration, started
+  at, the failing job if any, and the run URL.
+
+  Then write ci-status.md, and keep it to what is actionable: RED — currently
+  failing on a protected branch, with the failing job and the first error line
+  from its log; FLAKY — the same job passing and failing across recent runs;
+  SLOW — pipelines noticeably longer than their recent norm; STUCK — anything
+  queued or running far past its usual duration.
+
+  Do not retry, cancel, approve or deploy anything. If everything is green, say
+  "all green" with the number of runs you checked so the claim is verifiable.

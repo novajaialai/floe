@@ -1,0 +1,24 @@
+name: Watch competitors' changelogs
+category: engineering
+description: Track what competing products shipped this week from their public changelogs.
+integrations: [web, csv]
+requires_login: []
+schedule: "0 16 * * 5"
+inputs:
+  - changelog_urls
+  - days
+prompt: |
+  Check the changelogs at {changelog_urls} for entries from the last {days}
+  days.
+
+  Append each entry to shipped.csv: date, product, entry title, category
+  (feature / fix / deprecation / pricing), the entry text as written, and the
+  permalink. Page back through the changelog until you pass the cutoff — do not
+  stop at the first screen.
+
+  Then write shipped-digest.md: what each competitor shipped, the 3 entries
+  that would matter to our roadmap and why, anything that reads like a response
+  to us, and any deprecation that will annoy their users.
+
+  A product with nothing this period gets a line saying so. Silence is a
+  signal and must be reported, not omitted.

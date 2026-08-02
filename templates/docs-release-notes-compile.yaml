@@ -1,0 +1,26 @@
+name: Compile release notes from shipped work
+category: docs
+description: Turn a milestone's merged PRs and closed issues into customer-readable release notes.
+integrations: [github.com, csv]
+requires_login: []
+schedule: null
+inputs:
+  - repo_url
+  - since
+  - audience
+prompt: |
+  Open {repo_url} and collect everything merged or closed since {since}.
+
+  Page the merged-PR and closed-issue lists with paginate_extract into
+  shipped.csv: number, title, author, merged date, labels, URL. Open anything
+  whose title is not self-explanatory and add a "what changed" column written
+  from the PR description, not from the title.
+
+  Then write release-notes.md for {audience}: grouped into New, Improved,
+  Fixed, and Breaking; one line each in plain language about what a user can
+  now do; internal refactors and CI churn left out entirely; breaking changes
+  first with the migration step spelled out.
+
+  Add a collapsed "full changelog" list at the end linking every PR. If a PR's
+  user-facing effect is genuinely unclear, list it there rather than inventing
+  a benefit for it.

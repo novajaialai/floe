@@ -1,0 +1,25 @@
+name: Compare your docs against a competitor's
+category: docs
+description: Diff two documentation sites for coverage, depth and the topics only they cover.
+integrations: [web, csv]
+requires_login: []
+schedule: null
+inputs:
+  - our_docs_url
+  - their_docs_url
+prompt: |
+  Compare {our_docs_url} with {their_docs_url}.
+
+  Extract each site's navigation tree into topics.csv: site, section, page
+  title, URL, and depth in the nav. Use paginate_extract or the sidebar
+  structure — do not guess at pages that are not linked.
+
+  Map the two trees onto shared topics and write docs-gap.md:
+  - Topics they cover and we do not (the actual list, with their URLs).
+  - Topics we cover better, with why in one line.
+  - Where their getting-started is faster to first success — walk both start
+    pages and count the steps to the first working call.
+  - Formats they use that we do not (runnable snippets, per-language tabs,
+    videos, an API playground).
+
+  Judge from pages you actually opened, and say how many that was.

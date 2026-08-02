@@ -1,0 +1,24 @@
+name: Triage digest for a GitHub repo
+category: engineering
+description: Read a repo's new issues and PRs each morning and sort them into a short action list.
+integrations: [github.com, csv]
+requires_login: []
+schedule: "0 8 * * 1-5"
+inputs:
+  - repo_url
+  - days
+prompt: |
+  Open {repo_url} and review everything opened or updated in the last {days}
+  days.
+
+  Page the issues and pull-request lists with paginate_extract into
+  activity.csv (dedupe on the issue/PR URL): number, type, title, author,
+  state, labels, comment count, opened date, updated date, URL.
+
+  Open the ones with no label or no maintainer reply and add a "read" column
+  with a one-line summary of what the reporter actually wants.
+
+  Then write triage.md, max 15 lines: LIKELY BUGS (with the version and repro
+  if given), QUESTIONS ANSWERABLE IN ONE REPLY, PRs WAITING ON REVIEW (oldest
+  first, with the diff size), and NOISE. Post nothing, label nothing, close
+  nothing — this is a reading job.

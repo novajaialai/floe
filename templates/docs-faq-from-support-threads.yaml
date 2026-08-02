@@ -1,0 +1,25 @@
+name: Build an FAQ from real support threads
+category: docs
+description: Mine a forum or community for the questions people actually ask, with counts.
+integrations: [web, csv]
+requires_login: []
+schedule: null
+inputs:
+  - forum_url
+  - months
+prompt: |
+  Read the threads at {forum_url} from the last {months} months.
+
+  Page the thread list with paginate_extract into threads.csv: date, title,
+  author, replies, views, resolved yes/no, URL. Then open the threads with the
+  most replies or views and add a "question" column — the underlying question
+  in one sentence, in the user's own framing rather than the product's.
+
+  Cluster the questions and write faq-draft.md: 10-15 entries, each with the
+  question as a user would type it, the number of threads behind it, a draft
+  answer built from what the accepted replies actually say, and a link to the
+  clearest thread.
+
+  Mark any entry where the community's answer contradicts the official docs —
+  those are the valuable ones. If a cluster has no accepted answer anywhere,
+  say "no confirmed answer" instead of writing one.

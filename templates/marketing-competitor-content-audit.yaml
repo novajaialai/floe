@@ -1,0 +1,24 @@
+name: Audit a competitor's content engine
+category: marketing
+description: Inventory a competitor's blog into a CSV and read the pattern behind it.
+integrations: [web, csv]
+requires_login: []
+schedule: null
+inputs:
+  - blog_url
+  - months
+prompt: |
+  Audit the content at {blog_url} for the last {months} months.
+
+  Use paginate_extract on the blog index to write content.csv (dedupe on post
+  URL): title, URL, publish date, author, and any tag or category shown. Walk
+  the archive pagination until you pass the {months}-month cutoff.
+
+  Then open the 5 most recent posts and the 3 that look most commercial (buying
+  keywords, product mentions) and record for each: word count band, format
+  (how-to / listicle / case study / comparison / opinion), the CTA at the end,
+  and whether it targets an obvious keyword.
+
+  Write content-audit.md: publishing cadence with the numbers behind it, format
+  mix, topic clusters, which posts are clearly bottom-of-funnel, and 5 gaps
+  worth attacking. Say plainly if the archive was too JS-driven to page fully.

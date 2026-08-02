@@ -1,0 +1,23 @@
+name: Pre-call brief on a company
+category: sales
+description: Fifteen minutes of pre-call research on one company, written as a one-page brief.
+integrations: [web]
+requires_login: []
+schedule: null
+inputs:
+  - company
+  - meeting_context
+prompt: |
+  I have a call about {company}. Context: {meeting_context}.
+
+  Research them and write brief.md — one page, nothing padded:
+  - What they do, in one sentence a customer would recognise.
+  - Size signals: headcount range, offices, funding or ownership if public.
+  - What changed recently: news, launches, job postings, pricing or site
+    changes in the last ~6 months.
+  - Their pitch: how they position themselves and against whom.
+  - 5 questions worth asking on the call, each tied to something you found.
+
+  Keep running notes with source URLs in notes.md as you go, and cite the URL
+  next to each claim in the brief. End with a "what I could not find" section —
+  that section must not be empty unless you genuinely found everything.

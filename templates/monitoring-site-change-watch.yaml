@@ -1,0 +1,25 @@
+name: Watch a page for changes
+category: monitoring
+description: Snapshot specific pages daily and report exactly what changed.
+integrations: [web]
+requires_login: []
+schedule: "0 6 * * *"
+inputs:
+  - watch_urls
+  - what_matters
+prompt: |
+  Watch these pages: {watch_urls}. What I care about: {what_matters}.
+
+  For each URL, save today's meaningful content as a file in the workspace
+  named after the page and today's date — the text that matters, not the nav,
+  cookie banner or rotating testimonials. Take a screenshot of the relevant
+  region too.
+
+  Compare against the most recent previous snapshot for that URL and write
+  changes.md: for each page either "no change" or the specific before/after
+  text, quoted. Anything touching {what_matters} goes at the top.
+
+  Ignore churn that is not a change: timestamps, view counters, ad slots,
+  randomised ordering. If the page failed to load or is now behind a login,
+  that is the report for that page — do not carry yesterday's snapshot forward
+  as if it were today's.

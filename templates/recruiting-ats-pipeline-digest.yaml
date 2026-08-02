@@ -1,0 +1,24 @@
+name: Daily ATS pipeline digest
+category: recruiting
+description: Read your ATS pipeline each morning and list who is stuck and who needs a reply.
+integrations: [greenhouse.io, lever.co, ashbyhq.com]
+requires_login: [greenhouse.io, lever.co, ashbyhq.com]
+schedule: "30 8 * * 1-5"
+inputs:
+  - ats_url
+  - stale_days
+prompt: |
+  Open my ATS at {ats_url} in my logged-in profile.
+
+  For each open role, read the pipeline stages and record in pipeline.csv:
+  role, stage, candidate name, days in stage, next scheduled step (if any).
+
+  Then write pipeline-digest.md with three sections:
+  - NEEDS A REPLY TODAY — candidates waiting on us (unanswered message, or an
+    interview to schedule).
+  - STALLED — anyone sitting in a stage more than {stale_days} days.
+  - MOVING — stage changes since yesterday, if the ATS shows them.
+
+  Never send a message, advance a candidate, or click a reject/hire button.
+  This task reads and reports only. Max 20 lines total; if a role has nothing
+  to report, leave it out.

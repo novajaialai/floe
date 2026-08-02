@@ -1,0 +1,25 @@
+name: Export a paginated search to CSV
+category: data
+description: Point Floe at any paginated result set and get every row, deduped, in a file.
+integrations: [web, csv]
+requires_login: []
+schedule: null
+inputs:
+  - results_url
+  - key_column
+  - max_pages
+prompt: |
+  Export the results at {results_url}.
+
+  Open the page, then call paginate_extract with {key_column} as the dedupe key
+  and results.csv as the output, letting it advance through up to {max_pages}
+  pages via the site's next / load-more control or infinite scroll. The rows
+  MUST come from the tool — page text in a snapshot is truncated and must never
+  be transcribed by hand.
+
+  Keep every column the result rows expose, including link URLs.
+
+  When it stops, report: rows written, duplicates dropped, pages walked, and
+  why it stopped (pages exhausted, max_pages hit, or the advance control
+  disappeared). If the tool found no repeated structure, say so and describe
+  what the page actually looks like instead of improvising a scrape.

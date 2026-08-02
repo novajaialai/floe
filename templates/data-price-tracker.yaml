@@ -1,0 +1,24 @@
+name: Track prices on a product list
+category: data
+description: Re-check a watchlist of product pages daily and log every price move.
+integrations: [web, csv]
+requires_login: []
+schedule: "0 6 * * *"
+inputs:
+  - product_urls
+prompt: |
+  Check today's price for each of {product_urls}.
+
+  For each page, record in prices.csv: date, product name as shown, URL, price,
+  currency, in-stock yes/no, and any strike-through / was-price. Write each row
+  as you go. If a page shows a price only after selecting a variant, use the
+  default variant and note which one in a "variant" column.
+
+  Then compare against the previous date in prices.csv and write
+  price-moves.md: every product whose price or stock state changed, with old
+  value, new value and percent change; then "no change" for the rest as a
+  single count.
+
+  Do not add anything to a cart and do not start a checkout. If a page is
+  region-gated or shows a bot check, log the product as "blocked" for today
+  rather than skipping it silently.

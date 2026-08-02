@@ -1,0 +1,24 @@
+name: Pull a table out of a public data portal
+category: data
+description: Navigate a government or open-data portal, apply filters, and export the table.
+integrations: [web, csv]
+requires_login: []
+schedule: null
+inputs:
+  - portal_url
+  - dataset
+  - filters
+prompt: |
+  On {portal_url}, find the dataset "{dataset}" and apply these filters:
+  {filters}.
+
+  Prefer the portal's own export: if there is a CSV/download link for the
+  filtered view, take it and note the URL. Only if there is no export, page the
+  on-screen table with paginate_extract into dataset.csv, keeping the header
+  row exactly as the portal writes it.
+
+  Record in source.md: the dataset's official title, the publisher, the last
+  updated date, the filters you applied (as the portal renders them), the row
+  count the portal claims, and the row count you actually got. If those two
+  numbers disagree, that discrepancy is the headline of your report — do not
+  bury it.

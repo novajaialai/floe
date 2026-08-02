@@ -1,0 +1,24 @@
+name: Find who is talking about your brand
+category: marketing
+description: Sweep search, forums and news for recent mentions of a brand, deduped into a CSV.
+integrations: [web, news.ycombinator.com, reddit.com, csv]
+requires_login: []
+schedule: "0 8 * * *"
+inputs:
+  - brand
+  - days
+prompt: |
+  Find mentions of {brand} from the last {days} days.
+
+  Fan out with spawn_agents across the surfaces: web search with a recency
+  filter, a news search, a discussion site search, and the brand's own name as
+  a link query. Each executor appends to its own CSV: date, source, title,
+  URL, author or community, sentiment (positive / neutral / negative) and a
+  one-line what-they-said.
+
+  Merge the executor files into mentions.csv, deduped on URL, sorted newest
+  first. Check the executors' [verified] receipts before trusting any summary.
+
+  Then write mentions-digest.md: total mentions, the 3 worth replying to today
+  and why, anything negative that is spreading, and the sources that were
+  empty. An empty source is a finding — list it.

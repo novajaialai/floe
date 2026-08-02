@@ -1,0 +1,24 @@
+name: Read the release notes for your dependencies
+category: engineering
+description: Check each dependency's releases for breaking changes and CVEs since your pinned version.
+integrations: [github.com, npmjs.com, csv]
+requires_login: []
+schedule: "0 9 * * 1"
+inputs:
+  - dependencies
+prompt: |
+  For each dependency in {dependencies} (name and the version we are pinned
+  to), find the project's releases or changelog page and read every release
+  published after our version.
+
+  Append to releases.csv: package, our version, latest version, versions
+  skipped, release date of latest, has breaking changes (yes/no), and the URL.
+
+  Then write upgrade-notes.md, grouped by urgency: SECURITY (any advisory or
+  CVE mentioned, with the ID), BREAKING (quote the actual breaking-change line
+  from the notes), and NOTABLE (features worth having). One bullet per item
+  with a link.
+
+  Quote the changelog rather than summarising when a change is breaking — the
+  exact wording is what a developer needs. If a project keeps no changelog,
+  say so and give the commit-range link instead of guessing.

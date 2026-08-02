@@ -1,0 +1,25 @@
+name: Hunt for a place to live
+category: personal
+description: Sweep listing sites against your criteria into one deduped shortlist.
+integrations: [listing-sites, csv]
+requires_login: []
+schedule: "0 8 * * *"
+inputs:
+  - city
+  - criteria
+  - listing_sites
+prompt: |
+  Search {listing_sites} for places in {city} matching: {criteria}.
+
+  Use spawn_agents so each site is searched in parallel. Each executor pages
+  its results with paginate_extract into its own CSV: title, price, beds,
+  baths, size, neighbourhood, address as listed, available date, listing URL,
+  and posted date.
+
+  Merge into listings.csv deduped on address + price (the same unit is often
+  posted on several sites), with a "sites" column showing where each appeared.
+
+  Then write shortlist.md: the 10 best against {criteria} in order, with one
+  line each on the trade-off, plus anything suspicious — a price far below the
+  market for that area, no photos, or a listing that reappears with a new date.
+  Never contact a landlord or fill in an enquiry form.

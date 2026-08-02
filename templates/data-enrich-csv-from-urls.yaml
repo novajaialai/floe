@@ -1,0 +1,25 @@
+name: Fill in the missing column of a CSV
+category: data
+description: Take a CSV of names or URLs and visit each one to complete a missing field.
+integrations: [web, csv]
+requires_login: []
+schedule: null
+inputs:
+  - source_file
+  - url_column
+  - new_columns
+prompt: |
+  Read {source_file} from the workspace. For every row, open the URL in
+  {url_column} and find: {new_columns}.
+
+  Append each completed row to enriched.csv the moment that row is done —
+  incremental writes only, so an interrupted run keeps its work. Carry the
+  original columns through unchanged and add the new ones on the right.
+
+  Rules: put "not found" in a cell the page does not answer; never carry a
+  value over from the previous row; if a URL redirects to a different company,
+  record the final URL in a "resolved_url" column.
+
+  Finish with a report: rows in, rows out, fill rate per new column, and the
+  URLs that failed (404, timeout, login wall) listed individually so they can
+  be retried.

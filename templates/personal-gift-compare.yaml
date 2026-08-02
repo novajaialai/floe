@@ -1,0 +1,26 @@
+name: Compare options for a purchase
+category: personal
+description: Research a specific purchase across retailers and reviews, and pick one.
+integrations: [web, csv]
+requires_login: []
+schedule: null
+inputs:
+  - item
+  - budget
+  - priorities
+prompt: |
+  I want to buy {item} for around {budget}. What matters most: {priorities}.
+
+  Find the 5-8 real contenders from recent reviews and roundups (check the
+  publish date — a 2019 roundup is not evidence about today's models). For
+  each, append to options.csv: product, price, retailer, URL, the 3 specs that
+  bear on {priorities}, review score and how many reviews, and one line of what
+  reviewers complain about.
+
+  Read actual owner reviews, not just editorial roundups, and record the
+  complaint that recurs.
+
+  Then write pick.md: your recommendation with the reason in two sentences, the
+  runner-up and who it is better for, the one to avoid and why, and the price
+  worth waiting for if the item's price history suggests one. Add nothing to a
+  cart and buy nothing.

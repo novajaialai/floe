@@ -1,0 +1,24 @@
+name: Watch for new public filings
+category: monitoring
+description: Poll a filings or registry search and report new documents for the entities you track.
+integrations: [sec.gov, registry-sites, csv]
+requires_login: []
+schedule: "0 10 * * 1-5"
+inputs:
+  - entities
+  - filing_types
+prompt: |
+  Check for new filings by {entities}, types: {filing_types}.
+
+  Search the relevant public registry for each entity, sorted newest first, and
+  page the results with paginate_extract into filings.csv (dedupe on the filing
+  accession number or document URL): entity, filing type, filing date, period
+  covered, title, and URL.
+
+  For anything filed since the last run, open the document and add a "gist"
+  column — two sentences on what it actually says, taken from the filing
+  itself, not from a news article about it.
+
+  Write filings-digest.md: new filings newest first with the gist and a link,
+  then a line per entity that filed nothing. Keep interpretation separate from
+  the filing's own words, and quote the filing when the wording matters.

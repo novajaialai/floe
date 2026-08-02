@@ -1,0 +1,22 @@
+name: Watch who a competitor is hiring
+category: recruiting
+description: Scrape a company's careers page on a schedule and flag new and closed roles.
+integrations: [web, csv]
+requires_login: []
+schedule: "0 9 * * 1"
+inputs:
+  - careers_urls
+prompt: |
+  Check the careers pages: {careers_urls}.
+
+  For each, use paginate_extract to walk every open role into jobs.csv (dedupe
+  on company + job title + location): company, title, team, location, remote or
+  onsite, posted date if shown, job URL, and today's date as first_seen.
+
+  Compare against any jobs.csv already in the workspace: append NEW roles, and
+  write closed-roles.md listing anything present last run and missing now.
+  Then write hiring-signal.md — 5 bullets on what the mix says (which teams are
+  growing, which geographies, any brand-new job family).
+
+  If a careers page is an embedded ATS widget you cannot page, say which one
+  and how far you got.

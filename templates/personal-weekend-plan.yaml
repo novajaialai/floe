@@ -1,0 +1,26 @@
+name: Plan the weekend where you live
+category: personal
+description: Sweep local event and venue sites into a short, opinionated plan.
+integrations: [web, csv]
+requires_login: []
+schedule: "0 17 * * 4"
+inputs:
+  - city
+  - interests
+  - budget
+prompt: |
+  Find what is on in {city} this coming weekend. Interests: {interests}.
+  Budget: {budget}.
+
+  Check several kinds of source: a city events calendar, venue sites, a local
+  paper's listings, and the relevant venue or club pages for {interests}.
+  Append to events.csv: day, start time, event, venue, neighbourhood, price,
+  ticket status, URL, and source.
+
+  Confirm the date on the event page itself — listing pages recycle old
+  entries, and an event that already happened is the classic failure here.
+
+  Then write weekend.md: a Friday-evening / Saturday / Sunday plan with one
+  headline pick per slot, travel time between them, and 3 backups if something
+  sells out. Note anything that needs booking before the weekend and by when.
+  Book nothing.

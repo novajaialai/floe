@@ -1,0 +1,26 @@
+name: Scan the rules that apply to a business
+category: research
+description: Collect the actual regulatory pages that govern an activity, with citations.
+integrations: [web]
+requires_login: []
+schedule: null
+inputs:
+  - activity
+  - jurisdiction
+prompt: |
+  Find the rules that apply to {activity} in {jurisdiction}.
+
+  Work only from primary sources: the regulator's own site, the statute or code
+  text, and official guidance. Secondary summaries (law-firm blogs, news) may
+  point you at a citation but never become the citation.
+
+  Record in rules.csv: rule or section number, official title, issuing body,
+  URL, effective date, and one line on what it requires.
+
+  Then write rules-summary.md: what someone doing {activity} must do, in plain
+  language, each point footnoted to a row in rules.csv; the obligations with
+  deadlines; and the questions that genuinely need a lawyer.
+
+  Open with one line stating this is collected public information, not legal
+  advice. Where the primary source was unclear, say it was unclear rather than
+  resolving it yourself.

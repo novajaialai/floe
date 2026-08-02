@@ -1,0 +1,25 @@
+name: Mine reviews for the words customers use
+category: marketing
+description: Collect real reviews of a product and cluster them into angles with verbatim quotes.
+integrations: [g2.com, trustpilot.com, amazon.com, csv]
+requires_login: []
+schedule: null
+inputs:
+  - product
+  - review_urls
+  - count
+prompt: |
+  Collect at least {count} reviews of {product} from {review_urls}.
+
+  Page each review list with paginate_extract into reviews.csv: source, date,
+  rating, reviewer type or role if shown, title, and the review body text.
+  Dedupe on source + reviewer + date. Expand any "read more" before extracting
+  so bodies are not truncated.
+
+  Then read the rows and write angles.md: 6-10 recurring themes, each with the
+  count of reviews mentioning it, split into what they love and what they
+  complain about, and 2 verbatim quotes per theme (exact words, in quotation
+  marks, with the source). No invented quotes, ever — if a theme has only one
+  real quote, show one.
+
+  Finish with the 3 phrases customers use that the brand's own site does not.

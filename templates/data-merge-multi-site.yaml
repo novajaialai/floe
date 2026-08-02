@@ -1,0 +1,26 @@
+name: Merge the same list from several sites
+category: data
+description: Fan out across sources, then reconcile them into one deduped master table.
+integrations: [web, csv]
+requires_login: []
+schedule: null
+inputs:
+  - subject
+  - sources
+  - key_column
+prompt: |
+  Build one master table of {subject} using every source in {sources}.
+
+  Use spawn_agents so each source is scraped in parallel by its own executor.
+  Each executor: extract its source with paginate_extract into its own CSV,
+  keeping the source's own column names, and report the row count.
+
+  When they return, verify the [verified] file receipts, then reconcile: map
+  each source's columns onto one shared schema, merge into master.csv deduped
+  on {key_column}, and add a "sources" column listing which sites had that
+  record.
+
+  Write reconciliation.md: rows per source, rows after merge, how many records
+  appeared in more than one source, and every field where two sources disagreed
+  (record both values and which source you kept). Conflicts are the point of
+  this task — do not silently pick one.

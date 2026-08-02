@@ -1,0 +1,26 @@
+name: Score vendors into a shortlist
+category: research
+description: Evaluate candidate vendors against your own criteria and produce a scored table.
+integrations: [web, csv]
+requires_login: []
+schedule: null
+inputs:
+  - need
+  - criteria
+  - vendors
+prompt: |
+  We need: {need}. Evaluate these vendors: {vendors} against these criteria:
+  {criteria}.
+
+  Spawn one executor per vendor (2-3 in parallel). Each visits the vendor's
+  product, pricing, docs and security/trust pages and appends a row to its own
+  CSV with a column per criterion, holding the evidence — the actual sentence
+  or number from the site — not a score.
+
+  Then you do the scoring yourself in one pass over the merged evidence, so it
+  is consistent: build shortlist.csv with vendor, a 1-5 score per criterion,
+  total, and a link to the evidence for any score of 1 or 5.
+
+  Write shortlist.md: the top 3 in order, what would change the ranking, the
+  criterion where the field is weakest, and every criterion you could not
+  verify from public pages (those go in the vendor call, not in the score).

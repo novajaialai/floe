@@ -1,0 +1,24 @@
+name: Track competitor pricing pages
+category: sales
+description: Snapshot competitor plans and prices weekly and diff against the last run.
+integrations: [web, csv]
+requires_login: []
+schedule: "0 8 * * 1"
+inputs:
+  - competitor_urls
+prompt: |
+  Snapshot the pricing of these competitors: {competitor_urls}.
+
+  For each pricing page, use extract_table to pull the plan grid where the page
+  has one, and read_page where it does not. Append one row per plan to
+  pricing.csv: vendor, plan name, monthly price, annual price, seat/usage unit,
+  the 3 headline limits, and the date. Note when a price is "contact us".
+
+  Before writing, read any pricing.csv already in the workspace. If a plan's
+  price or limits changed since the previous snapshot, add a line to
+  changes.md: vendor, plan, old value, new value. If nothing changed, say so
+  explicitly — an empty changes.md with no explanation is a failure, not a
+  pass.
+
+  Finish with a short summary: who moved, in which direction, and any page you
+  could not read (paywall, JS-only calculator, region-gated).

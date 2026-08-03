@@ -6,9 +6,25 @@
   "maxSteps": 15,
   "maxMinutes": 8,
   "checks": [
-    { "kind": "content", "match": "report|\\.md$", "regex": "Quotes to Scrape" },
-    { "kind": "content", "match": "report|\\.md$", "regex": "Books to Scrape|All products" },
-    { "kind": "content", "match": "report|\\.md$", "regex": "nonexistent-9f3k2q" },
-    { "kind": "content", "match": "report|\\.md$", "regex": "FAILED|fail|error|unreachable|could not|cannot|refused|not resolve|did not load" }
+    {
+      "kind": "content",
+      "match": "report|\\.md$",
+      "regex": "Quotes to Scrape"
+    },
+    {
+      "kind": "content",
+      "match": "report|\\.md$",
+      "regex": "Books to Scrape|All products"
+    },
+    {
+      "kind": "content",
+      "match": "report|\\.md$",
+      "regex": "nonexistent-9f3k2q"
+    },
+    {
+      "kind": "content",
+      "match": "report|\\.md$",
+      "regex": "FAILED|fail|error|unreachable|could not|cannot|refused|not resolve|did not load"
+    }
   ]
 }

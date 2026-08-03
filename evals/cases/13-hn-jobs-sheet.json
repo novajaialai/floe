@@ -6,10 +6,34 @@
   "maxSteps": 16,
   "maxMinutes": 9,
   "checks": [
-    { "kind": "csv_rows", "match": "job|\\.csv$", "min": 55, "max": 60 },
-    { "kind": "csv_columns", "match": "job|\\.csv$", "required": ["title", "link|url", "age|posted"] },
-    { "kind": "csv_unique", "match": "job|\\.csv$", "column": "link|url" },
-    { "kind": "content", "match": "job|\\.csv$", "regex": "item\\?id=[0-9]+" },
-    { "kind": "row_accounting", "match": "job|\\.csv$" }
+    {
+      "kind": "csv_rows",
+      "match": "job|\\.csv$",
+      "min": 55,
+      "max": 60
+    },
+    {
+      "kind": "csv_columns",
+      "match": "job|\\.csv$",
+      "required": [
+        "title",
+        "link|url",
+        "age|posted"
+      ]
+    },
+    {
+      "kind": "csv_unique",
+      "match": "job|\\.csv$",
+      "column": "link|url"
+    },
+    {
+      "kind": "content",
+      "match": "job|\\.csv$",
+      "regex": "item\\?id=[0-9]+"
+    },
+    {
+      "kind": "row_accounting",
+      "match": "job|\\.csv$"
+    }
   ]
 }

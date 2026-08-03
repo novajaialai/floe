@@ -7,9 +7,30 @@
   "maxMinutes": 16,
   "parallel": 2,
   "checks": [
-    { "kind": "csv_rows", "match": "quote", "min": 10 },
-    { "kind": "csv_rows", "match": "book", "min": 20 },
-    { "kind": "csv_rows", "match": "^merged\\.csv$", "min": 25, "max": 35 },
-    { "kind": "csv_columns", "match": "^merged\\.csv$", "required": ["source", "item", "detail"] }
+    {
+      "kind": "csv_rows",
+      "match": "quote",
+      "min": 10
+    },
+    {
+      "kind": "csv_rows",
+      "match": "book",
+      "min": 20
+    },
+    {
+      "kind": "csv_rows",
+      "match": "^merged\\.csv$",
+      "min": 25,
+      "max": 35
+    },
+    {
+      "kind": "csv_columns",
+      "match": "^merged\\.csv$",
+      "required": [
+        "source",
+        "item",
+        "detail"
+      ]
+    }
   ]
 }

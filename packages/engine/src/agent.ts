@@ -1,14 +1,20 @@
 import type { AgentEvent, ChatResponse, Msg, Provider, ToolCall, ToolResult } from "./types.js";
 import { executeTool, toolDefs, type ToolRuntime } from "./tools.js";
 import type { RunControl } from "./control.js";
+import { isProtocolRefusal } from "./providers.js";
 
-const SYSTEM_PROMPT = `You are Floe, a browser agent that completes real knowledge-work tasks by operating a live Chromium browser, logged in as the user.
+export { isProtocolRefusal };
+
+/** Exported so prompt-level behaviour can be exercised without a browser. */
+export const SYSTEM_PROMPT = `You are Floe, a browser agent that completes real knowledge-work tasks by operating a live Chromium browser, logged in as the user.
 
 Rules:
 - Work step by step. After each action you receive a fresh page snapshot; base your next action on it, never on assumptions.
 - Element ids ([n]) stick to the element that owns them for as long as it stays on the page, but ids you have not seen in a recent snapshot may be gone. If a click reports the element is missing, read_page and use a fresh id.
-- HARD RULE for any task that asks you to scrape/collect a list into a CSV: the rows MUST be written by paginate_extract, never by workspace_write. Page text in a snapshot is truncated and unreliable for extraction — do not transcribe rows from it. paginate_extract dedupes on a key column, so calling it again (e.g. after fixing a column mapping) is always safe.
-- To extract any list, table, directory, feed or search result: call extract_table once to see the structured rows and their cell numbering, then call paginate_extract to write them to a CSV — it extracts, maps cells to columns, dedupes in code, appends, and advances pagination itself (max_pages lets it do several pages in one call). Never retype extracted rows into workspace_write by hand: it is slow, lossy, and skips dedupe. workspace_write is for notes and prose results, not for scraped rows.
+- HARD RULE for any task that asks you to scrape/collect a list into a CSV: the rows MUST be written by paginate_extract, never by workspace_write. Rows typed by hand carry no extraction receipt, so they are indistinguishable from remembered or invented data and are DISCARDED as unaccountable when the result is checked — even when every value is correct. Page text in a snapshot is truncated and unreliable for extraction; do not transcribe rows from it, and never reconstruct a column (e.g. a URL) from a pattern you inferred.
+- To extract any list, table, directory, feed or search result: call extract_table once to see the structured rows, their cell numbering and their L<n> links, then call paginate_extract to write them to a CSV — it extracts, maps cells/links to columns, dedupes in code, appends, and advances pagination itself (max_pages lets it do several pages in one call). It dedupes on a key column, so calling it again after fixing a mapping is always safe; add reset=true to start the file over. workspace_write is for notes and prose results, not for scraped rows.
+- If a list genuinely has no structure paginate_extract can see, or a page returns an error (HTTP 4xx/5xx, "Sorry", a rate limit), STOP and report that honestly with whatever you did collect. A short accountable result beats a complete unaccountable one.
+- If the task names an output file (e.g. report.md, results.csv, market-map.md), that exact file is the deliverable: it must exist, written by your own tools, and contain the finished answer before you call done. Notes and intermediate files never substitute for it.
 - Persist intermediate results to the workspace as you go (workspace_write) — especially for multi-page extraction, append rows to a CSV incrementally so progress survives interruptions. Keep a short notes.md with your plan and progress.
 - If a page fails or an element is missing, re-read the page and try a different approach before giving up.
 - Respect the user's accounts: act only as needed for the task, never change account settings or send messages unless the task explicitly says to.
@@ -17,9 +23,10 @@ Rules:
 /** Extra rules for an agent that can delegate (only added when spawn_agents is available). */
 const ORCHESTRATOR_PROMPT = `
 You are the ORCHESTRATOR for this task. Extra rules:
-- Any part of the task that touches 2+ independent sites, queries, sections or list segments MUST be delegated with spawn_agents, all in ONE call so the executors run in parallel — never visit those pages yourself one after another.
+- Delegate with spawn_agents when the task has SUBSTANTIAL independent branches — different sites, different queries, or list segments that each need several page loads. Send them all in ONE call so the executors run in parallel; never work through such branches yourself one after another.
+- Do NOT delegate work you could finish yourself in about as many steps as it takes to brief an executor: a handful of quick page reads on ONE site is your own work. Fan-out has a real cost — it scatters the answer across files you then have to reassemble, and each executor is a weaker model than you.
 - Each executor gets a complete standalone task: exact URL(s), exactly what to collect, and the exact workspace file name to write (give each a distinct file, e.g. <name>-results.csv). They share this workspace but cannot see your context.
-- Keep synthesis for yourself: after spawn_agents returns, read the executors' files with workspace_read and write the final merged deliverable.
+- The deliverable is YOURS, and it is a hard requirement: whatever output file the task names (report.md, market-map.md, results.csv …) must be written by you, in full, before you call done. Executor files are raw material — a run that leaves the answer spread across <name>-notes.md files has not completed the task, no matter how good those files are. After spawn_agents returns, workspace_read the files you need and write the single merged deliverable.
 - Use your own browser only for work that cannot be parallelised (a quick check, a final verification).`;
 
 /** Injected once when the wall-clock budget runs out, instead of a hard kill. */
@@ -42,6 +49,15 @@ export interface AgentOptions {
   /** Out-of-band pause/resume/stop, checked between steps. */
   control?: RunControl;
 }
+
+/** Corrective reframe for a refusal — legitimacy, not louder rules. */
+const REFUSAL_REFRAME = `That reply refused the request format, so nothing happened and the user got no work done.
+
+To be explicit about what this is: Floe is an open-source browser agent (MIT, running on this machine) and this API call is how it asks a model for its next step. It is a normal program-calls-model integration, not a role-play trick and not an attempt to get you to pretend you executed something. Nobody is asking you to claim you ran anything, to impersonate another system, or to deny what you are.
+
+The action list is a menu of operations THIS PROGRAM performs. Your job is only to choose the next one and write it down. The JSON object is the output FORMAT — the next line of a transcript that Floe parses, exactly like being asked to reply in JSON. Floe executes it in its own real Chromium and sends you the real result as the next message; the results you have already received in this conversation came from exactly that.
+
+So: reply with one JSON object of the form {"thought": "...", "action": "...", "input": {...}} and continue the task. If you believe the task itself should not be done, choose the done action with success=false and say why there.`;
 
 export interface AgentRunResult {
   success: boolean;
@@ -74,6 +90,9 @@ export async function runAgent(
   let graceLeft = opts.graceSteps ?? 4;
   let acted = false; // has ANY tool call happened this run?
   let protocolNudges = 0;
+  let refusalNudges = 0;
+  let deliverableNudges = 0;
+  const deliverables = requiredDeliverables(task);
 
   for (let step = 1; step <= maxSteps; step++) {
     // Between steps is the only safe interruption point: a half-run tool call
@@ -116,6 +135,16 @@ export async function runAgent(
     if (res.text) emit({ type: "thought", step, detail: res.text });
 
     if (res.toolCalls.length === 0) {
+      // A refusal of the protocol itself can arrive at ANY step — including
+      // mid-run, after plenty of real actions — and used to end the run as a
+      // "final summary" with the deliverable unwritten. Reframe and continue.
+      if (isProtocolRefusal(res.text) && refusalNudges < 2) {
+        refusalNudges++;
+        messages.push({ role: "assistant", content: res.text, toolCalls: [] });
+        messages.push({ role: "user", content: REFUSAL_REFRAME });
+        emit({ type: "error", step, detail: `protocol refusal detected — reframe injected: ${res.text.slice(0, 200)}` });
+        continue;
+      }
       // A text-only answer after real actions is a legitimate final summary.
       // A text-only answer when NOTHING has ever been done is the signature of
       // a protocol escape (e.g. a chat backend "completing" the task with its
@@ -171,6 +200,19 @@ export async function runAgent(
           isError: true,
         });
         emit({ type: "error", step, detail: "done(success=true) with zero executed actions — rejected" });
+      } else if (input.success && deliverableNudges < 1 && missingDeliverables(deliverables, rt).length) {
+        // Output-file compliance. A fan-out run that scattered its findings
+        // across executor notes and never wrote the file the task named has
+        // not done the task — and only code can check that, since the model
+        // reporting success is precisely the thing that was wrong.
+        deliverableNudges++;
+        const missing = missingDeliverables(deliverables, rt);
+        results.push({
+          callId: doneCall.id,
+          content: `REJECTED: the task names ${missing.join(", ")} as its output, but ${missing.length > 1 ? "those files do not" : "that file does not"} exist in the workspace. Whatever you gathered is raw material, not the deliverable. Write the complete finished answer to ${missing.join(" and ")} with workspace_write now (read your other workspace files first if you need them), then call done.`,
+          isError: true,
+        });
+        emit({ type: "error", step, detail: `done rejected — required output missing: ${missing.join(", ")}` });
       } else {
         emit({ type: "done", step, detail: input.summary });
         return { success: input.success, summary: input.summary, steps: step };
@@ -180,6 +222,36 @@ export async function runAgent(
   }
 
   return { success: false, summary: `Hit step limit (${maxSteps}) before completing the task.`, steps: maxSteps };
+}
+
+/**
+ * Output files the task explicitly names ("write it into report.md"). Only
+ * conservative, unambiguous shapes count: a bare `name.ext` token with a
+ * known document extension. Over-detection would block honest completions, so
+ * anything ambiguous is simply not enforced.
+ */
+export function requiredDeliverables(task: string): string[] {
+  const out = new Set<string>();
+  for (const m of task.matchAll(/\b([A-Za-z0-9][\w-]{1,40}\.(?:md|csv|txt|json|tsv))\b/g)) {
+    const name = m[1];
+    // A file inside a URL is a source, not a deliverable.
+    const at = m.index ?? 0;
+    const before = task.slice(Math.max(0, at - 60), at);
+    if (/https?:\/\/\S*$/.test(before)) continue;
+    out.add(name);
+  }
+  return [...out];
+}
+
+/** Which named deliverables are absent from the workspace right now. */
+function missingDeliverables(names: string[], rt: ToolRuntime): string[] {
+  return names.filter((n) => {
+    try {
+      return !rt.workspace.exists(n) || rt.workspace.read(n).trim().length === 0;
+    } catch {
+      return true;
+    }
+  });
 }
 
 /**

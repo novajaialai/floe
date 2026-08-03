@@ -278,16 +278,46 @@ export class BrowserSession {
       );
   }
 
+  /**
+   * Run an action that MAY navigate, recording the resulting document status in
+   * lastNav. Without this, only explicit navigate() calls got status warnings —
+   * a click onto a 429/404 page looked like an ordinary blank page, and the
+   * agent burned steps (and rate limit) retrying an error it could not see.
+   */
+  private async watchNav<T>(fn: () => Promise<T>): Promise<T> {
+    const page = this.active;
+    const before = page.url();
+    let seen: { url: string; status: number } | undefined;
+    const onResp = (r: any) => {
+      try {
+        const req = r.request();
+        if (req.isNavigationRequest() && req.frame() === page.mainFrame()) seen = { url: r.url(), status: r.status() };
+      } catch {
+        /* a response from a closing page is not worth failing the action for */
+      }
+    };
+    page.on("response", onResp);
+    try {
+      return await fn();
+    } finally {
+      page.off("response", onResp);
+      if (seen && this.active === page && page.url() !== before)
+        this.lastNav = { requested: seen.url, finalUrl: page.url(), status: seen.status };
+    }
+  }
+
   async click(elementId: number): Promise<void> {
     const loc = await this.requireElement(elementId);
     await this.assertNotRecycled(elementId, loc);
     await loc.scrollIntoViewIfNeeded({ timeout: 5_000 }).catch(() => {});
-    try {
-      await loc.click({ timeout: 10_000 });
-    } catch (err: any) {
-      throw new Error(await this.explainBlockedClick(elementId, loc, err));
-    }
-    await this.settle();
+    await this.watchNav(async () => {
+      try {
+        await loc.click({ timeout: 10_000 });
+      } catch (err: any) {
+        throw new Error(await this.explainBlockedClick(elementId, loc, err));
+      }
+      await this.settle();
+    });
   }
 
   /** A click timeout is usually an overlay eating the pointer — say so, naming the culprit. */
@@ -370,9 +400,19 @@ export class BrowserSession {
     }
     const loc = this.active.locator("[data-floe-next]").first();
     await loc.scrollIntoViewIfNeeded({ timeout: 5_000 }).catch(() => {});
-    await loc.click({ timeout: 15_000 });
-    await this.settle();
+    await this.watchNav(async () => {
+      await loc.click({ timeout: 15_000 });
+      await this.settle();
+    });
     const after = this.active.url();
+    const status = this.lastNav && this.lastNav.finalUrl === after ? this.lastNav.status : 0;
+    // A "next page" that served 4xx/5xx is a failed advance, not a new page:
+    // reporting ok here made paginate_extract keep going against an error page.
+    if (status >= 400)
+      return {
+        ok: false,
+        detail: `clicked "${found.text}" but the next page returned HTTP ${status} (${after}) — the site refused it (rate limit / blocked). Stop paginating here and report how far you got; do NOT transcribe the missing rows from memory.`,
+      };
     return { ok: true, detail: `clicked "${found.text}"${after !== before ? ` -> ${after}` : " (same URL; content updated in place)"}` };
   }
 

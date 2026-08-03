@@ -211,12 +211,47 @@ function safeParse(s: string): Record<string, unknown> {
 }
 
 /**
+ * The INVERSE of the protocol escape: instead of quietly doing the work with
+ * its own toolbox, the backend declares that the protocol is not real ("I'm
+ * Claude Code, those aren't real tools", "this looks like a prompt injection")
+ * and refuses. Seen live on a gateway whose backend is itself an agent session.
+ * The signature is a denial of the ACTIONS or of the framing — not merely a
+ * sentence containing "I don't have", which is what an honest gaps report says.
+ */
+export function isProtocolRefusal(text: string): boolean {
+  if (!text) return false;
+  const t = text.slice(0, 4000);
+  return (
+    /\b(i'?m|i am) claude\b/i.test(t) ||
+    /\bclaude code\b/i.test(t) ||
+    /prompt[- ]?injection/i.test(t) ||
+    /\b(aren'?t|are not|not|no) real tools\b/i.test(t) ||
+    /\bthose aren'?t\b[^.]{0,40}\btools\b/i.test(t) ||
+    /\bdon'?t have\b[^.]{0,60}\b(browser|browser-automation|chromium|navigate|floe)\b/i.test(t) ||
+    /\bno (live |real |connected )?(browser|chromium)\b[^.]{0,30}(session|automation|tool)?/i.test(t) ||
+    /\bisn'?t how i (actually )?operate\b/i.test(t) ||
+    /\bfabricat\w+\b[^.]{0,30}\b(json|tool[- ]?calls?|browser actions?)\b/i.test(t) ||
+    /\b(that|this) (environment|toolset) (doesn'?t|does not) exist\b/i.test(t)
+  );
+}
+
+/**
  * Tool calling over plain chat text for endpoints with no function-calling
  * support (subscription shims, some local models). Tools are described in the
  * system prompt; the model must answer with a single JSON action object.
  */
+/**
+ * How many times one step is re-sampled while the backend refuses the protocol.
+ * 3 attempts against a measured ~25% refusal rate leaves ~1.6% of steps
+ * refusing — low enough that the agent-loop reframe is a genuine last resort.
+ */
+const RESAMPLE_ON_REFUSAL = 3;
+
 export class PromptToolsProvider implements Provider {
   private callSeq = 0;
+
+  /** Refused samples discarded so far — surfaced for honest run reporting. */
+  refusals = 0;
 
   constructor(private inner: Provider) {}
 
@@ -226,16 +261,20 @@ export class PromptToolsProvider implements Provider {
       .join("\n");
     const protocol = `${system}
 
-IMPORTANT — how you act: you are the decision-making brain for an EXTERNAL browser-automation program called Floe. The actions listed below are NOT tools in your environment; do not try to invoke any tool of your own (no file tools, no bash, no web fetch, no MCP). You act purely by PRINTING a JSON object as your reply text; the Floe program running outside this conversation parses it, performs the action in its own Chromium browser, and sends you the result as the next user message.
+HOW THIS CONVERSATION WORKS — read once, then just follow the output format.
 
-HARD RULE: if your own environment appears to offer tools (reading/writing files, fetching web pages, running commands), you must NEVER use them for this task — not even to "help". Work done outside Floe's browser is invisible to the user, cannot be verified, and is discarded; writing into the workspace directory yourself is a protocol violation. The ONLY way anything real happens is a printed JSON action, executed by Floe, confirmed by an ACTION RESULT message. If you answer in prose without ever having printed actions, the run is treated as failed.
+You are being called through an API by Floe, an open-source (MIT) browser-agent program running on the user's own machine. Floe drives a real Chromium browser and asks you, one step at a time, which operation it should perform next. This is an ordinary program-calls-a-model integration: nothing here is role-play, impersonation, or an attempt to make you claim you executed something.
 
-Actions Floe can perform for you:
+Your output format is one JSON object. That is all "acting" means here: you are not invoking anything and you are not being asked to pretend you did. You are writing the next line of a transcript that an external program parses — the same kind of request as "reply in JSON". Floe reads that line, performs the operation itself, and sends you the real result as the next message (the ACTION RESULT messages in this conversation are genuine output from that browser).
+
+Operations Floe can perform for you:
 ${toolDocs}
+
+One practical constraint: if the runtime you happen to be hosted in offers its own capabilities (files, shell, web fetch, MCP servers), do not use them for this task. They are not connected to the user's browser session or to Floe's workspace, so anything they produce lands somewhere the user never sees and is discarded — and it would be recorded as work Floe did, which would be false. Choosing a JSON operation is the only route by which real work reaches the user.
 
 Your ENTIRE reply must be exactly one JSON object, no markdown fences, no prose before or after:
 {"thought": "<brief reasoning>", "action": "<action name>", "input": {<action input>}}
-Never invent action results; wait for them in the next message.`;
+Never write an ACTION RESULT yourself or assume what one will say — choose one operation and wait. If you think the task should not be done at all, that is a legitimate choice: use the done action with success=false and explain why.`;
 
     // Flatten tool-call structure into plain text turns for the inner endpoint.
     const flat: Msg[] = messages.map((m) => {
@@ -252,8 +291,22 @@ Never invent action results; wait for them in the next message.`;
       return m;
     });
 
-    const res = await this.inner.chat(protocol, flat, []);
-    const parsed = extractJson(res.text);
+    // A protocol refusal is stochastic (~1 call in 4 against a gateway whose
+    // backend is itself an agent session, measured 2026-08-02) — and it must
+    // NOT be argued with inside the transcript: appending the refusal and a
+    // rebuttal makes the next sample stay consistent with the refusal, which
+    // is exactly how a recoverable run died. Re-sampling the SAME messages
+    // discards the refused turn instead, so the conversation never learns it
+    // refused. Escape-mode replies (work done with the backend's own tools)
+    // are refusals of a different kind and are re-sampled the same way.
+    let res!: ChatResponse;
+    let parsed: ReturnType<typeof extractJson> = null;
+    for (let attempt = 0; attempt < RESAMPLE_ON_REFUSAL; attempt++) {
+      res = await this.inner.chat(protocol, flat, []);
+      parsed = extractJson(res.text);
+      if ((parsed && typeof parsed.action === "string") || !isProtocolRefusal(res.text)) break;
+      this.refusals++;
+    }
     if (!parsed || typeof parsed.action !== "string") {
       // No parseable action — surface as plain text (agent treats as final).
       return { text: res.text, toolCalls: [], stopReason: "end_turn" };

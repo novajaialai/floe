@@ -6,6 +6,10 @@
   "maxSteps": 14,
   "maxMinutes": 7,
   "checks": [
-    { "kind": "content", "match": "fact|\\.txt$|\\.md$", "regex": "10 December 1815|December 10,? 1815|1815-12-10" }
+    {
+      "kind": "content",
+      "match": "fact|\\.txt$|\\.md$",
+      "regex": "10 December 1815|December 10,? 1815|1815-12-10"
+    }
   ]
 }

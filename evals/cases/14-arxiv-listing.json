@@ -6,10 +6,32 @@
   "maxSteps": 12,
   "maxMinutes": 7,
   "checks": [
-    { "kind": "csv_rows", "match": "paper|\\.csv$", "exact": 50 },
-    { "kind": "csv_columns", "match": "paper|\\.csv$", "required": ["id|arxiv", "title"] },
-    { "kind": "csv_unique", "match": "paper|\\.csv$", "column": "id|arxiv" },
-    { "kind": "content", "match": "paper|\\.csv$", "regex": "\\b\\d{4}\\.\\d{4,5}\\b" },
-    { "kind": "row_accounting", "match": "paper|\\.csv$" }
+    {
+      "kind": "csv_rows",
+      "match": "paper|\\.csv$",
+      "exact": 50
+    },
+    {
+      "kind": "csv_columns",
+      "match": "paper|\\.csv$",
+      "required": [
+        "id|arxiv",
+        "title"
+      ]
+    },
+    {
+      "kind": "csv_unique",
+      "match": "paper|\\.csv$",
+      "column": "id|arxiv"
+    },
+    {
+      "kind": "content",
+      "match": "paper|\\.csv$",
+      "regex": "\\b\\d{4}\\.\\d{4,5}\\b"
+    },
+    {
+      "kind": "row_accounting",
+      "match": "paper|\\.csv$"
+    }
   ]
 }

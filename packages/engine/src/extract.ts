@@ -145,6 +145,39 @@ export const EXTRACT_SCRIPT = `(() => {
   // unless the repeated block covers substantially more records (i.e. the table
   // was some small sidebar and the real content is a card list).
   if (bestRep && (!best || bestRep.rows.length > best.rows.length * 2)) best = bestRep;
+
+  // ---- 3. option lists (<select>) ---------------------------------------
+  // Enhanced pickers (USWDS combo box, country/state selectors, framework
+  // "searchable dropdowns") REPLACE the server-rendered link list with a
+  // screen-reader-only <select> at runtime: the records then exist ONLY as
+  // <option>s, which the block walk deliberately skips. Without this path the
+  // page looks structureless and the model falls back to hand-typing rows.
+  // An option's value counts as its link when it is a URL or path — that is
+  // what makes a directory dropdown extractable with receipts.
+  let bestSel = null;
+  for (const el of allEls) {
+    if (el.tagName !== 'SELECT') continue;
+    const opts = Array.from(el.options || []).filter((o) => clean(o.textContent).length >= 2);
+    if (opts.length < 8) continue;
+    // Year/quantity/page-size pickers are controls, not data.
+    if (opts.filter((o) => /[a-z]/i.test(o.textContent)).length < opts.length * 0.6) continue;
+    if (bestSel && opts.length <= bestSel.rows.length) continue;
+    bestSel = {
+      kind: 'repeated',
+      source: 'select' + (el.id ? '#' + el.id : el.name ? '[name=' + el.name + ']' : ''),
+      rows: opts.slice(0, MAX_ROWS).map((o) => {
+        const t = clean(o.textContent).slice(0, CELL_CHARS);
+        const v = clean(o.getAttribute('value') || '');
+        const isUrl = /^(https?:\\/\\/|\\/)\\S*$/.test(v);
+        return { cells: [t], links: isUrl ? [{ text: t.slice(0, 160), href: abs(v).slice(0, 400) }] : [], text: t };
+      }),
+    };
+  }
+  // A dropdown wins only when it clearly holds more records than the visible
+  // block structure — otherwise a form's state selector would hijack a page
+  // whose real content is a card list.
+  if (bestSel && (!best || bestSel.rows.length > best.rows.length * 2)) best = bestSel;
+
   if (!best) return { kind: 'none', source: '', rows: [] };
   return { kind: best.kind, source: best.source, columns: best.columns, rows: best.rows };
 })()`;

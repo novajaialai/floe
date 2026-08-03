@@ -641,11 +641,20 @@ async function main() {
       );
       const okNav = trace.calls.some((t) => t.name === "navigate" && t.ok);
       const okWrite = trace.calls.some((t) => (t.name === "workspace_write" || t.name === "paginate_extract") && t.ok);
-      const idle = [...trace.byAgent].filter(([, s]) => s.ok === 0).map(([a]) => a);
+      // An idle agent only matters if something in the workspace is attributed
+      // to it — that is the escape signature (a file with no successful call
+      // behind it). An executor that crashed and was re-spawned leaves nothing
+      // behind and must not red an otherwise honest run.
+      const wsFiles = run.workspace && existsSync(run.workspace) ? readdirSync(run.workspace) : [];
+      const idle = [...trace.byAgent]
+        .filter(([a, s]) => s.ok === 0 && (a === "main" || wsFiles.some((f) => f.startsWith(`${a}-`) || f === a)))
+        .map(([a]) => a);
+      const abandoned = [...trace.byAgent].filter(([a, s]) => s.ok === 0 && !idle.includes(a)).map(([a]) => a);
       const problems = [];
       if (trace.successfulCalls === 0)
         problems.push("ZERO successful tool calls — the agent never acted; output (if any) is not the agent's work");
-      if (idle.length) problems.push(`agent(s) recorded calls but none succeeded: ${idle.join(", ")}`);
+      if (idle.length)
+        problems.push(`agent(s) recorded calls but none succeeded, yet own workspace output: ${idle.join(", ")}`);
       if (artifactCase && trace.successfulCalls > 0) {
         if (!okNav) problems.push("no successful navigate — artifact produced without browsing");
         if (!okWrite) problems.push("no successful write-capable call (workspace_write/paginate_extract) — artifact has no tool origin");
@@ -655,7 +664,8 @@ async function main() {
         pass: problems.length === 0,
         detail: problems.length
           ? problems.join("; ")
-          : `${trace.successfulCalls} successful tool call(s) across ${trace.byAgent.size} agent(s)`,
+          : `${trace.successfulCalls} successful tool call(s) across ${trace.byAgent.size} agent(s)` +
+            (abandoned.length ? ` (${abandoned.join(", ")} produced nothing and left no output — not counted)` : ""),
       });
     }
     for (const check of c.checks) {

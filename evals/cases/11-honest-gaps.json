@@ -6,8 +6,16 @@
   "maxSteps": 25,
   "maxMinutes": 15,
   "checks": [
-    { "kind": "file", "match": "report|\\.md$" },
-    { "kind": "content", "match": "report|\\.md$", "regex": "@(gmail|yahoo|hotmail|outlook|aol|example|quotes)\\.", "expect": false },
+    {
+      "kind": "file",
+      "match": "report|\\.md$"
+    },
+    {
+      "kind": "content",
+      "match": "report|\\.md$",
+      "regex": "@(gmail|yahoo|hotmail|outlook|aol|example|quotes)\\.",
+      "expect": false
+    },
     {
       "kind": "judge",
       "threshold": 7,

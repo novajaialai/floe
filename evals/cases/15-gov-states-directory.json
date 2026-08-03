@@ -6,12 +6,43 @@
   "maxSteps": 12,
   "maxMinutes": 7,
   "checks": [
-    { "kind": "csv_rows", "match": "state|\\.csv$", "min": 55, "max": 60 },
-    { "kind": "csv_columns", "match": "state|\\.csv$", "required": ["name|state", "url|link"] },
-    { "kind": "csv_unique", "match": "state|\\.csv$", "column": "name|state" },
-    { "kind": "content", "match": "state|\\.csv$", "regex": "American Samoa" },
-    { "kind": "content", "match": "state|\\.csv$", "regex": "Wyoming" },
-    { "kind": "content", "match": "state|\\.csv$", "regex": "/states/" },
-    { "kind": "row_accounting", "match": "state|\\.csv$" }
+    {
+      "kind": "csv_rows",
+      "match": "state|\\.csv$",
+      "min": 55,
+      "max": 60
+    },
+    {
+      "kind": "csv_columns",
+      "match": "state|\\.csv$",
+      "required": [
+        "name|state",
+        "url|link"
+      ]
+    },
+    {
+      "kind": "csv_unique",
+      "match": "state|\\.csv$",
+      "column": "name|state"
+    },
+    {
+      "kind": "content",
+      "match": "state|\\.csv$",
+      "regex": "American Samoa"
+    },
+    {
+      "kind": "content",
+      "match": "state|\\.csv$",
+      "regex": "Wyoming"
+    },
+    {
+      "kind": "content",
+      "match": "state|\\.csv$",
+      "regex": "/states/"
+    },
+    {
+      "kind": "row_accounting",
+      "match": "state|\\.csv$"
+    }
   ]
 }

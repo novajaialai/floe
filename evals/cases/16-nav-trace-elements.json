@@ -6,10 +6,34 @@
   "maxSteps": 18,
   "maxMinutes": 9,
   "checks": [
-    { "kind": "csv_rows", "match": "element|\\.csv$", "exact": 5 },
-    { "kind": "csv_columns", "match": "element|\\.csv$", "required": ["name|element", "symbol", "atomic|number"] },
-    { "kind": "content", "match": "element|\\.csv$", "regex": "Beryllium" },
-    { "kind": "content", "match": "element|\\.csv$", "regex": "Boron" },
-    { "kind": "trace_nav", "url_regex": "en\\.wikipedia\\.org/wiki/(Hydrogen|Helium|Lithium|Beryllium|Boron)", "min_distinct": 5 }
+    {
+      "kind": "csv_rows",
+      "match": "element|\\.csv$",
+      "exact": 5
+    },
+    {
+      "kind": "csv_columns",
+      "match": "element|\\.csv$",
+      "required": [
+        "name|element",
+        "symbol",
+        "atomic|number"
+      ]
+    },
+    {
+      "kind": "content",
+      "match": "element|\\.csv$",
+      "regex": "Beryllium"
+    },
+    {
+      "kind": "content",
+      "match": "element|\\.csv$",
+      "regex": "Boron"
+    },
+    {
+      "kind": "trace_nav",
+      "url_regex": "en\\.wikipedia\\.org/wiki/(Hydrogen|Helium|Lithium|Beryllium|Boron)",
+      "min_distinct": 5
+    }
   ]
 }

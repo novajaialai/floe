@@ -6,13 +6,39 @@
   "maxSteps": 24,
   "maxMinutes": 13,
   "checks": [
-    { "kind": "file", "match": "market|map|\\.md$" },
-    { "kind": "content", "match": "market|map|\\.md$", "regex": "Apache" },
-    { "kind": "content", "match": "market|map|\\.md$", "regex": "Playwright" },
-    { "kind": "content", "match": "market|map|\\.md$", "regex": "Puppeteer" },
-    { "kind": "content", "match": "market|map|\\.md$", "regex": "Selenium" },
-    { "kind": "content", "match": "market|map|\\.md$", "regex": "playwright\\.dev|pptr\\.dev|selenium\\.dev|github\\.com" },
-    { "kind": "citations_visited", "match": "market|map|\\.md$" },
+    {
+      "kind": "file",
+      "match": "market|map|\\.md$"
+    },
+    {
+      "kind": "content",
+      "match": "market|map|\\.md$",
+      "regex": "Apache"
+    },
+    {
+      "kind": "content",
+      "match": "market|map|\\.md$",
+      "regex": "Playwright"
+    },
+    {
+      "kind": "content",
+      "match": "market|map|\\.md$",
+      "regex": "Puppeteer"
+    },
+    {
+      "kind": "content",
+      "match": "market|map|\\.md$",
+      "regex": "Selenium"
+    },
+    {
+      "kind": "content",
+      "match": "market|map|\\.md$",
+      "regex": "playwright\\.dev|pptr\\.dev|selenium\\.dev|github\\.com"
+    },
+    {
+      "kind": "citations_visited",
+      "match": "market|map|\\.md$"
+    },
     {
       "kind": "judge",
       "threshold": 7,

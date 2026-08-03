@@ -133,6 +133,28 @@ function validateColumns(specs: ColumnSpec[]): string | null {
   return null;
 }
 
+/**
+ * Does this workspace_write look like hand-transcribed table rows? A .csv (or
+ * comma/tab-separated body) with 3+ data lines of consistent width is the
+ * signature; a header-only reset, a note, or a prose file is not.
+ */
+export function handTypedRows(name: string, content: string): boolean {
+  const lines = content.split("\n").filter((l) => l.trim());
+  if (lines.length < 4) return false; // header + 3 rows minimum
+  const sep = /\t/.test(lines[0]) ? "\t" : ",";
+  const widths = lines.map((l) => l.split(sep).length);
+  if (widths[0] < 2) return false;
+  const consistent = widths.filter((w) => w === widths[0]).length >= lines.length * 0.8;
+  if (!consistent) return false;
+  // Either the file is named as a table, or its first line is a bare header
+  // row (short field names, no prose punctuation) — prose that happens to
+  // contain commas must not be mistaken for transcription.
+  const headerish = lines[0]
+    .split(sep)
+    .every((f) => f.replace(/^"|"$/g, "").trim().length <= 24 && !/[.:;!?]/.test(f));
+  return /\.(csv|tsv)$/i.test(name) || headerish;
+}
+
 /** "rows have 4-7 cells" — the tell that cell indices shift on some rows. */
 function cellSpread(rows: ExtractedRow[]): { min: number; max: number } {
   let min = Infinity, max = 0;
@@ -154,14 +176,23 @@ function renderTable(t: ExtractedTable, maxRows: number): string {
     head.push(
       `[!] Rows have ${spread.min}-${spread.max} cells — optional fields shift the cell indices on some rows, so "cell" mappings are UNRELIABLE for anything after the shift; prefer "pattern" (regex) columns for fields that can be missing.`,
     );
+  // Every link of the row is listed with its index: a row usually carries
+  // several (title, author, comments, timestamp) and the model must be able to
+  // pick the right one FIRST TRY — guessing costs a page load per attempt,
+  // which is how a scrape thrashes into a rate limit and gets abandoned for
+  // hand transcription.
   const body = t.rows.slice(0, maxRows).map((r, i) => {
     const cells = r.cells.map((c, j) => `[${j}]${c}`).join(" | ");
-    const link = r.links[0] ? `  ->${r.links[0].href}` : "";
-    return `#${i} ${cells.slice(0, 500)}${link}`;
+    const links = r.links
+      .slice(0, 5)
+      .map((l, j) => `\n    L${j} "${l.text.slice(0, 50)}" -> ${l.href}`)
+      .join("");
+    const more = r.links.length > 5 ? `\n    (+${r.links.length - 5} more links)` : "";
+    return `#${i} ${cells.slice(0, 500)}${links}${more}`;
   });
   if (t.rows.length > maxRows) body.push(`… ${t.rows.length - maxRows} more rows (same shape)`);
   body.push(
-    `\n→ Do NOT retype these rows by hand. To save them (and the following pages) to a CSV with code-side dedupe, call paginate_extract with the cell numbers above, e.g. columns=[{"name":"title","cell":1}].`,
+    `\n→ Do NOT retype these rows by hand: rows written with workspace_write carry no extraction receipt and are discarded as unaccountable. Save them (and the following pages) to a CSV with paginate_extract, mapping the [n] cell numbers and the L<n> links above, e.g. columns=[{"name":"title","cell":1},{"name":"url","link":"href","link_index":0}]. link_index is the L number; link_match matches the quoted link text instead. If a mapping came out wrong, call paginate_extract again with reset=true — never "fix" the CSV by hand.`,
   );
   return [...head, ...body].join("\n");
 }
@@ -294,6 +325,11 @@ export const TOOLS: RegisteredTool[] = [
           max_pages: { type: "number", description: "Pages to process in this call (default 1, max 20)" },
           next: { type: "string", enum: ["auto", "scroll", "none"], description: "How to advance (default auto)" },
           require: { type: "string", description: "Optional regex; rows whose text does not match are dropped" },
+          reset: {
+            type: "boolean",
+            description:
+              "Empty the CSV before extracting, so a wrong column mapping can be redone from scratch. Always use this instead of rewriting the file with workspace_write — a hand-written CSV loses its extraction receipt.",
+          },
         },
         ["csv", "columns"],
       ),
@@ -310,6 +346,12 @@ export const TOOLS: RegisteredTool[] = [
       const log: string[] = [];
       let totals = { added: 0, dup: 0, empty: 0, total: 0 };
       let sample = "";
+      // Truncating through the extractor (not workspace_write) keeps the file's
+      // provenance inside the receipted path after a bad column mapping.
+      if (i.reset && rt.workspace.exists(i.csv)) {
+        rt.workspace.write(i.csv, "", { tool: "paginate_extract", agent: rt.label });
+        log.push(`reset: ${i.csv} emptied before extracting`);
+      }
 
       for (let p = 1; p <= pages; p++) {
         const table = await rt.session.extractTable();
@@ -367,7 +409,13 @@ export const TOOLS: RegisteredTool[] = [
       const meta = { tool: "workspace_write", agent: rt.label };
       if ((i.mode ?? "overwrite") === "append") rt.workspace.append(i.name, i.content, meta);
       else rt.workspace.write(i.name, i.content, meta);
-      return `Wrote ${i.name} (${i.content.length} chars). Files: ${rt.workspace.list().join(", ")}`;
+      const out = `Wrote ${i.name} (${i.content.length} chars). Files: ${rt.workspace.list().join(", ")}`;
+      // Hand-typed rows are the shortcut this agent must not have: they carry no
+      // extraction receipt, so nothing can distinguish them from remembered or
+      // invented data. Say so at the moment it happens, not in a prompt rule.
+      return handTypedRows(i.name, i.content)
+        ? `${out}\nWARNING: ${i.name} looks like scraped rows typed by hand. Rows written this way have NO extraction receipt and are treated as unaccountable — they are discarded when the result is graded, even if they are correct. Re-do them with paginate_extract (add reset=true to start the file over); if the page has no structure paginate_extract can see, say so in your summary rather than transcribing it.`
+        : out;
     },
   },
   {

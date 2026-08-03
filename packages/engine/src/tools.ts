@@ -480,6 +480,27 @@ export const TOOLS: RegisteredTool[] = [
     handler: async (rt, i) => rt.workspace.read(i.name).slice(0, 20_000),
   },
   {
+    def: {
+      name: "sheets_write",
+      description:
+        "Write a table of rows into a Google Sheet in the logged-in profile. url is the spreadsheet URL, or \"new\" to create a fresh spreadsheet. rows is an array of arrays (first row can be headers). mode=append (default) writes below the existing data; mode=overwrite writes starting at the start cell (default A1). Values are pasted as TSV through the sheet's own grid — the same path a human bulk-fill uses, no coordinate clicking. Every receipt claim is re-read from the sheet and verified; the tool fails loudly rather than report an unverified write.",
+      parameters: obj(
+        {
+          url: { type: "string", description: "docs.google.com/spreadsheets URL, or \"new\" to create one" },
+          rows: {
+            type: "array",
+            description: 'e.g. [["Name","Website"],["Acme","acme.com"],["Beta","beta.io"]]',
+            items: { type: "array", items: { type: ["string", "number", "boolean"] } },
+          },
+          start: { type: "string", description: "Top-left cell to write from (default A1)" },
+          mode: { type: "string", enum: ["append", "overwrite"], description: "append below existing data (default) or overwrite from start" },
+        },
+        ["url", "rows"],
+      ),
+    },
+    handler: async (rt, i) => rt.session.sheetsWrite({ url: i.url, rows: i.rows, start: i.start, mode: i.mode }),
+  },
+  {
     orchestratorOnly: true,
     def: {
       name: "spawn_agents",

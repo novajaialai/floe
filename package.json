@@ -10,7 +10,7 @@
     "build": "tsc -b packages/engine packages/cli && npm run build:app && npm run lint:templates",
     "build:app": "npm --workspace @floe/app run build",
     "lint:templates": "node scripts/lint-templates.mjs",
-    "test": "npm run lint:templates && node scripts/smoke-cron.mjs && node scripts/smoke-eval-checks.mjs && node scripts/smoke-steering.mjs",
+    "test": "npm run lint:templates && node scripts/smoke-cron.mjs && node scripts/smoke-eval-checks.mjs && node scripts/smoke-steering.mjs && node scripts/smoke-sheets.mjs",
     "test:browser": "node scripts/smoke-extract.mjs",
     "eval": "node scripts/eval.mjs",
     "eval:quick": "node scripts/eval.mjs --tier quick",

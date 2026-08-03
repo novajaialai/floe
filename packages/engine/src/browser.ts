@@ -1,5 +1,20 @@
 import { chromium, type BrowserContext, type Locator, type Page } from "playwright-core";
 import { EXTRACT_SCRIPT, FIND_NEXT_SCRIPT, type ExtractedTable } from "./extract.js";
+import {
+  NAMEBOX_SELECTOR,
+  SHEETS_NAMEBOX_SCRIPT,
+  SHEETS_READ_ACTIVE_SCRIPT,
+  SHEETS_READ_CELL_SCRIPT,
+  SHEETS_STATE_SCRIPT,
+  cellRefToString,
+  expectedLastCell,
+  maxRowWidth,
+  parseCellRef,
+  rowsToTsv,
+  validateSheetRows,
+  type CellRef,
+  type SheetCell,
+} from "./sheets.js";
 
 /**
  * Injected into the page to index interactive elements. Each gets a
@@ -477,6 +492,137 @@ export class BrowserSession {
     return this.active.screenshot({ type: "png" });
   }
 
+  /**
+   * Write rows into a Google Sheet via the sheet's own user paths — name box
+   * for cell jumps, clipboard TSV paste + Enter to commit (Sheets parses TSV
+   * into the grid natively), Ctrl+End/Home for navigation. No coordinate
+   * clicking (plan: "keyboard nav + formula bar, not pixel-clicking").
+   *
+   * Every receipt claim is re-read from the grid after the write: the last
+   * used cell (name box after Ctrl+End) must equal the expected bottom-right
+   * of the written range, and sample cells are read back and compared
+   * verbatim. A mismatch throws — the sheet and the receipt must agree.
+   */
+  async sheetsWrite(opts: {
+    url: string;
+    rows: SheetCell[][];
+    start?: string;
+    mode?: "overwrite" | "append";
+  }): Promise<string> {
+    const bad = validateSheetRows(opts.rows);
+    if (bad) throw new Error(`sheets_write: ${bad}`);
+    const startRC = parseCellRef(opts.start ?? "A1");
+    const mode = opts.mode ?? "append";
+    const rows = opts.rows;
+    const width = maxRowWidth(rows);
+    const lastRC = expectedLastCell(startRC, rows.length, width);
+    const lastRef = cellRefToString(lastRC);
+
+    // sheets.new creates a fresh spreadsheet; the redirect's final URL is the
+    // real doc (read back for the receipt so the sheet is citable).
+    const target = /^new$/i.test(opts.url.trim()) ? "https://sheets.new" : opts.url;
+    await this.navigate(target);
+
+    // Poll for the grid — Sheets is a heavy SPA; give it up to ~20s.
+    let state: { gridReady: boolean; loginWall: boolean; isSheet: boolean } | null = null;
+    for (let i = 0; i < 40; i++) {
+      const s = (await this.active.evaluate(SHEETS_STATE_SCRIPT)) as { gridReady: boolean; loginWall: boolean; isSheet: boolean };
+      state = s;
+      if (s.gridReady || s.loginWall) break;
+      await this.active.waitForTimeout(500);
+    }
+    const finalUrl = this.active.url();
+    if (!state) throw new Error(`sheets_write: could not read the sheet's page state at ${finalUrl}.`);
+    if (state.loginWall)
+      throw new Error(
+        `sheets_write: the Floe profile is not signed in to Google — the sheet redirected to the sign-in wall (${finalUrl}). Sign in to Google once in the Floe profile, then retry.`,
+      );
+    if (!state.gridReady) {
+      if (!state.isSheet)
+        throw new Error(
+          `sheets_write: "${opts.url}" is not a Google Sheets document (landed on ${finalUrl}). Pass a docs.google.com/spreadsheets URL or "new".`,
+        );
+      throw new Error(`sheets_write: the sheet never finished loading its grid at ${finalUrl}.`);
+    }
+
+    const sheetUrl = this.active.url();
+    const mod = process.platform === "darwin" ? "Meta" : "Control";
+
+    // Anchor the active cell: append lands on the first empty row below the
+    // used range (Ctrl+End -> bottom-right, Home -> column A, ArrowDown ->
+    // next row); overwrite jumps straight to the start cell via the name box.
+    if (mode === "append") {
+      await this.active.keyboard.press(`${mod}+End`);
+      await this.active.waitForTimeout(300);
+      await this.active.keyboard.press("Home");
+      await this.active.waitForTimeout(200);
+      await this.active.keyboard.press("ArrowDown");
+      await this.active.waitForTimeout(300);
+    } else {
+      await this.active.keyboard.press(`${mod}+Home`);
+      await this.active.waitForTimeout(200);
+      await this.jumpToCell(startRC);
+    }
+
+    // Paste TSV into the active cell. Sheets splits it into rows/columns
+    // natively (the same path a human bulk-fill uses); Enter commits.
+    const tsv = rowsToTsv(rows);
+    await this.active.evaluate(
+      async (text) => {
+        await navigator.clipboard.writeText(text);
+      },
+      tsv,
+    );
+    await this.active.keyboard.press(`${mod}+v`);
+    await this.active.waitForTimeout(600);
+    await this.active.keyboard.press("Enter");
+    await this.active.waitForTimeout(500);
+
+    // --- verification (code-measured, re-read from the grid) ---
+    // 1. The used range's bottom-right must be the expected last cell.
+    await this.active.keyboard.press(`${mod}+End`);
+    await this.active.waitForTimeout(400);
+    const nameBox = (await this.active.evaluate(SHEETS_NAMEBOX_SCRIPT)) as string | null;
+    if (!nameBox || nameBox.toUpperCase() !== lastRef.toUpperCase())
+      throw new Error(
+        `sheets_write: expected the written range to end at ${lastRef} but the sheet's last used cell is ${nameBox ?? "(unknown)"} — the paste did not land as expected. Nothing has been reported as written.`,
+      );
+
+    // 2. Sample read-backs: first cell, last cell, and (for wide/tall data)
+    //    the bottom-left. Each is compared verbatim against the input.
+    const reads: string[] = [];
+    const expected = (r: number, c: number) => (rows[r]?.[c] ?? "") + "";
+    const sampleCells: { ref: string; want: string }[] = [
+      { ref: cellRefToString(startRC), want: expected(0, 0) },
+      { ref: lastRef, want: expected(rows.length - 1, width - 1) },
+    ];
+    if (rows.length > 1) sampleCells.push({ ref: cellRefToString({ row: lastRC.row, col: startRC.col }), want: expected(rows.length - 1, 0) });
+    for (const { ref, want } of sampleCells) {
+      await this.jumpToCell(parseCellRef(ref));
+      const got = ((await this.active.evaluate(SHEETS_READ_ACTIVE_SCRIPT)) as string | null) ?? "";
+      reads.push(`${ref}="${got}"`);
+      if (got !== want)
+        throw new Error(
+          `sheets_write: read-back mismatch at ${ref} — expected "${want}" but the sheet shows "${got}". The sheet and the receipt disagree, so nothing is reported as written.`,
+        );
+    }
+
+    return [
+      `[verified] sheets_write: wrote ${rows.length} rows x ${width} cols (${mode}) to ${sheetUrl}, range ${cellRefToString(startRC)}:${lastRef}.`,
+      `Cells re-read from the sheet and matched verbatim: ${reads.join(", ")}.`,
+      `Last used cell (Ctrl+End) = ${nameBox}.`,
+    ].join("\n");
+  }
+
+  /** Jump the active cell to a reference by typing it into the name box. */
+  private async jumpToCell(rc: CellRef): Promise<void> {
+    const nameBoxInput = this.active.locator(NAMEBOX_SELECTOR).first();
+    await nameBoxInput.click({ timeout: 8_000 }).catch(() => {});
+    await nameBoxInput.fill(cellRefToString(rc)).catch(() => {});
+    await this.active.keyboard.press("Enter");
+    await this.active.waitForTimeout(400);
+  }
+
   /** Tabs owned by THIS session only. */
   async listTabs(): Promise<{ index: number; url: string; title: string; active: boolean }[]> {
     return Promise.all(
@@ -520,14 +666,27 @@ export class FloeBrowser {
   private mainSession!: BrowserSession;
 
   async launch(opts: BrowserOptions): Promise<BrowserSession> {
+    // Playwright forces --use-mock-keychain on macOS by default. A sign-in
+    // performed in a normal Chrome window encrypts cookies with the REAL
+    // "Chrome Safe Storage" Keychain key; with the mock keychain Floe cannot
+    // decrypt them — cookie present, session unauthenticated (caught live:
+    // LinkedIn redirected to /uas/login despite li_at in the store, session
+    // 10 first logged-in template test). Strip the default so Floe's Chrome
+    // reads the user's real Keychain like any other Chrome instance. The
+    // same-binary ACL makes this silent; --password-store=basic stays (it
+    // only affects saved passwords, not cookie decryption).
     this.context = await chromium.launchPersistentContext(opts.profileDir, {
       headless: opts.headless ?? false,
       channel: opts.executablePath ? undefined : (opts.channel ?? "chrome"),
       executablePath: opts.executablePath,
       viewport: null,
+      ignoreDefaultArgs: ["--use-mock-keychain"],
       args: ["--disable-blink-features=AutomationControlled", "--start-maximized"],
     });
     const first = this.context.pages()[0] ?? (await this.context.newPage());
+    // sheets_write pastes TSV via navigator.clipboard — grant the permission
+    // up front so the paste path is not blocked by a browser permission bar.
+    await this.context.grantPermissions(["clipboard-read", "clipboard-write"]).catch(() => {});
     this.mainSession = new BrowserSession("main", this.context, first);
     this.sessions.set("main", this.mainSession);
     return this.mainSession;

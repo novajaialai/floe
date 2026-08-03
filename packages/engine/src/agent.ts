@@ -15,6 +15,8 @@ Rules:
 - To extract any list, table, directory, feed or search result: call extract_table once to see the structured rows, their cell numbering and their L<n> links, then call paginate_extract to write them to a CSV — it extracts, maps cells/links to columns, dedupes in code, appends, and advances pagination itself (max_pages lets it do several pages in one call). It dedupes on a key column, so calling it again after fixing a mapping is always safe; add reset=true to start the file over. workspace_write is for notes and prose results, not for scraped rows.
 - If a list genuinely has no structure paginate_extract can see, or a page returns an error (HTTP 4xx/5xx, "Sorry", a rate limit), STOP and report that honestly with whatever you did collect. A short accountable result beats a complete unaccountable one.
 - If the task names an output file (e.g. report.md, results.csv, market-map.md), that exact file is the deliverable: it must exist, written by your own tools, and contain the finished answer before you call done. Notes and intermediate files never substitute for it.
+- Scraping a paginated list is only finished when pagination is EXHAUSTED: after paginate_extract, if its result says "[!] PAGINATION NOT EXHAUSTED", more pages remain — keep calling paginate_extract (larger max_pages if useful) until the advance reports failure or the result no longer shows that banner. Calling done on a partial scrape is treated as incomplete, even when every collected row is correct.
+- Citation rule for anything you write that names URLs (reports, notes, summaries): cite ONLY URLs you (or your executors, in their [visited] lines) actually opened in the browser. A URL you have not seen in a snapshot or a [visited] list is ungrounded — writing it is fabrication, whether or not you believe it exists. If you did not open a source, say so instead of citing it.
 - Persist intermediate results to the workspace as you go (workspace_write) — especially for multi-page extraction, append rows to a CSV incrementally so progress survives interruptions. Keep a short notes.md with your plan and progress.
 - If a page fails or an element is missing, re-read the page and try a different approach before giving up.
 - Respect the user's accounts: act only as needed for the task, never change account settings or send messages unless the task explicitly says to.
@@ -27,6 +29,7 @@ You are the ORCHESTRATOR for this task. Extra rules:
 - Do NOT delegate work you could finish yourself in about as many steps as it takes to brief an executor: a handful of quick page reads on ONE site is your own work. Fan-out has a real cost — it scatters the answer across files you then have to reassemble, and each executor is a weaker model than you.
 - Each executor gets a complete standalone task: exact URL(s), exactly what to collect, and the exact workspace file name to write (give each a distinct file, e.g. <name>-results.csv). They share this workspace but cannot see your context.
 - The deliverable is YOURS, and it is a hard requirement: whatever output file the task names (report.md, market-map.md, results.csv …) must be written by you, in full, before you call done. Executor files are raw material — a run that leaves the answer spread across <name>-notes.md files has not completed the task, no matter how good those files are. After spawn_agents returns, workspace_read the files you need and write the single merged deliverable.
+- Citation grounding when merging: each executor's result carries a [visited] line — the URLs that agent actually opened. The deliverable may cite ONLY URLs from your own visited list or an executor's [visited] line. An executor's summary or notes may name URLs it never opened; if you cannot ground a URL, drop it or write "not opened" instead of citing it. Ungrounded citations fail verification as fabrication.
 - Use your own browser only for work that cannot be parallelised (a quick check, a final verification).`;
 
 /** Injected once when the wall-clock budget runs out, instead of a hard kill. */
@@ -92,6 +95,7 @@ export async function runAgent(
   let protocolNudges = 0;
   let refusalNudges = 0;
   let deliverableNudges = 0;
+  let paginationNudges = 0;
   const deliverables = requiredDeliverables(task);
 
   for (let step = 1; step <= maxSteps; step++) {
@@ -138,12 +142,23 @@ export async function runAgent(
       // A refusal of the protocol itself can arrive at ANY step — including
       // mid-run, after plenty of real actions — and used to end the run as a
       // "final summary" with the deliverable unwritten. Reframe and continue.
-      if (isProtocolRefusal(res.text) && refusalNudges < 2) {
+      // res.refused is set by PromptToolsProvider when its re-sampling
+      // exhausted on a refusal — treat that as a refusal even if the final
+      // phrasing slips past the detector regexes.
+      if ((res.refused || isProtocolRefusal(res.text)) && refusalNudges < 2) {
         refusalNudges++;
         messages.push({ role: "assistant", content: res.text, toolCalls: [] });
         messages.push({ role: "user", content: REFUSAL_REFRAME });
         emit({ type: "error", step, detail: `protocol refusal detected — reframe injected: ${res.text.slice(0, 200)}` });
         continue;
+      }
+      // Reframed twice (and re-sampled up to RESAMPLE_ON_REFUSAL times inside
+      // the provider) and still refusing: this is an honest failure, NOT a
+      // legitimate final summary. Returning success=acted here would report a
+      // silent success for a run whose deliverable the browser never wrote.
+      if (res.refused || isProtocolRefusal(res.text)) {
+        emit({ type: "error", step, detail: `protocol refusal persisted — ending run as failure: ${res.text.slice(0, 200)}` });
+        return { success: false, summary: res.text || "The model refused the protocol.", steps: step };
       }
       // A text-only answer after real actions is a legitimate final summary.
       // A text-only answer when NOTHING has ever been done is the signature of
@@ -213,6 +228,23 @@ export async function runAgent(
           isError: true,
         });
         emit({ type: "error", step, detail: `done rejected — required output missing: ${missing.join(", ")}` });
+      } else if (
+        input.success &&
+        paginationNudges < 1 &&
+        (rt.session as { paginationPending?: boolean }).paginationPending
+      ) {
+        // Partial-scrape gate (session 10): the last paginate_extract ended
+        // with a next/more control still present, so done(success=true) means
+        // "I finished early". One nudge — the model may legitimately decide
+        // the remaining pages are out of scope, but it has to say so.
+        paginationNudges++;
+        results.push({
+          callId: doneCall.id,
+          content:
+            "REJECTED: the last paginate_extract ended with a next/more control still present — pagination is NOT exhausted, so this scrape is partial (every collected row is fine, but the list continues). Keep paginating (call paginate_extract again — dedupe skips rows you already have — or pass a larger max_pages) until the advance reports failure or the result no longer shows the \"[!] PAGINATION NOT EXHAUSTED\" banner, then call done. If you genuinely judge the remaining pages out of scope, call done with success=false and say why.",
+          isError: true,
+        });
+        emit({ type: "error", step, detail: "done rejected — pagination not exhausted (partial scrape)" });
       } else {
         emit({ type: "done", step, detail: input.summary });
         return { success: input.success, summary: input.summary, steps: step };

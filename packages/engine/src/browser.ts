@@ -172,6 +172,11 @@ export interface BrowserOptions {
 export class BrowserSession {
   private pages: Page[] = [];
   private active: Page;
+  /** Every URL this session's browser actually displayed, first-seen order. */
+  private visitedUrls: string[] = [];
+
+  /** True while a paginate_extract call ended with more pages still available. */
+  paginationPending = false;
 
   constructor(
     readonly name: string,
@@ -186,6 +191,22 @@ export class BrowserSession {
     return this.active;
   }
 
+  /**
+   * The session's visited list — the only URLs its agent can legitimately
+   * cite. First-seen order, deduped, capped (a 15-hour run visits thousands
+   * of intermediate pages; the list is for citation grounding, not history).
+   */
+  visited(): string[] {
+    return [...this.visitedUrls];
+  }
+
+  private recordVisit(url: string): void {
+    if (!url || url === "about:blank") return;
+    if (this.visitedUrls.includes(url)) return;
+    if (this.visitedUrls.length >= 200) return;
+    this.visitedUrls.push(url);
+  }
+
   /** Status + redirect info from the last explicit navigation, for honest snapshots. */
   lastNav?: { requested: string; finalUrl: string; status: number };
 
@@ -194,6 +215,7 @@ export class BrowserSession {
     const resp = await this.active.goto(url, { waitUntil: "domcontentloaded", timeout: 45_000 });
     await this.settle();
     this.lastNav = { requested: url, finalUrl: this.active.url(), status: resp?.status() ?? 0 };
+    this.recordVisit(this.active.url());
     return this.active.url();
   }
 
@@ -301,8 +323,10 @@ export class BrowserSession {
       return await fn();
     } finally {
       page.off("response", onResp);
-      if (seen && this.active === page && page.url() !== before)
+      if (seen && this.active === page && page.url() !== before) {
         this.lastNav = { requested: seen.url, finalUrl: page.url(), status: seen.status };
+        this.recordVisit(page.url());
+      }
     }
   }
 
@@ -414,6 +438,17 @@ export class BrowserSession {
         detail: `clicked "${found.text}" but the next page returned HTTP ${status} (${after}) — the site refused it (rate limit / blocked). Stop paginating here and report how far you got; do NOT transcribe the missing rows from memory.`,
       };
     return { ok: true, detail: `clicked "${found.text}"${after !== before ? ` -> ${after}` : " (same URL; content updated in place)"}` };
+  }
+
+  /**
+   * Probe whether a next/more control is STILL present, without clicking it.
+   * Used after a paginate_extract page budget is spent: a control that still
+   * exists means pagination is NOT exhausted, and the agent must keep going
+   * rather than call done on a partial scrape. Same detector as advancePage,
+   * so the two can never disagree about what "next" means.
+   */
+  async nextControl(): Promise<{ text: string; href: string } | null> {
+    return (await this.active.evaluate(FIND_NEXT_SCRIPT)) as { text: string; href: string } | null;
   }
 
   /** Scroll the page's main scrollable to its bottom; returns its content height. */

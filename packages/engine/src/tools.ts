@@ -165,6 +165,46 @@ function cellSpread(rows: ExtractedRow[]): { min: number; max: number } {
   return { min: rows.length ? min : 0, max };
 }
 
+/**
+ * Exhaustive-pagination steering (session 10): decide, after a
+ * paginate_extract call's page budget is spent, whether pagination is truly
+ * exhausted. The model's failure mode was calling done right after the first
+ * page (30/30 rows receipted but the "More" link never followed) — a partial
+ * scrape reported as complete because nothing in the tool result said more
+ * pages existed.
+ *
+ * Pure + exported so smoke-steering.mjs can assert the decision matrix
+ * model-free; the tool handler applies it to the session flag + banner.
+ *
+ * @param mode      how this call advanced ("none" = agent explicitly said one page)
+ * @param exhausted true when the last advancePage call failed (no control / HTTP error / no scroll growth)
+ * @param nextFound label of a still-present next/more control, or null
+ * @param pages     the page budget this call was given
+ */
+export function paginationProbe(
+  mode: "auto" | "scroll" | "none",
+  exhausted: boolean,
+  nextFound: string | null,
+  pages: number,
+): { pending: boolean; line: string } {
+  if (mode === "none" || exhausted) return { pending: false, line: "" };
+  if (mode === "scroll") {
+    // Last advance grew content; the budget is the only thing that stopped us.
+    // No control exists on an infinite feed, so the honest signal is the
+    // advance itself — more content is likely still loadable.
+    return {
+      pending: true,
+      line: `[!] PAGINATION NOT EXHAUSTED: the last scroll advanced the feed and the page budget (${pages}) is spent. Keep paginating (call paginate_extract again, or with a larger max_pages) until the advance reports no new content — do NOT call done while more may remain.`,
+    };
+  }
+  if (nextFound)
+    return {
+      pending: true,
+      line: `[!] PAGINATION NOT EXHAUSTED: a "${nextFound}" control is still present after ${pages} page(s). Keep paginating (call paginate_extract again, or with a larger max_pages) until the advance reports failure — do NOT call done while more pages remain.`,
+    };
+  return { pending: false, line: "" };
+}
+
 function renderTable(t: ExtractedTable, maxRows: number): string {
   if (t.kind === "none" || !t.rows.length) return "No repeated structure detected on this page.";
   const spread = cellSpread(t.rows);
@@ -346,6 +386,7 @@ export const TOOLS: RegisteredTool[] = [
       const log: string[] = [];
       let totals = { added: 0, dup: 0, empty: 0, total: 0 };
       let sample = "";
+      let advanceFailed = false;
       // Truncating through the extractor (not workspace_write) keeps the file's
       // provenance inside the receipted path after a bad column mapping.
       if (i.reset && rt.workspace.exists(i.csv)) {
@@ -377,8 +418,20 @@ export const TOOLS: RegisteredTool[] = [
         if (p === pages || mode === "none") break;
         const adv = await rt.session.advancePage(mode);
         log.push(`  advance: ${adv.detail}`);
-        if (!adv.ok) break;
+        if (!adv.ok) {
+          advanceFailed = true;
+          break;
+        }
       }
+      // Exhaustive-pagination steering: after the budget is spent, probe
+      // whether more pages genuinely remain. If they do, the session flag is
+      // set so done(success=true) is rejected (agent.ts) until the agent keeps
+      // paginating; a real advance failure clears it. This closes the
+      // "stopped after page 1, all rows receipted, called done" hole.
+      const probe = advanceFailed ? null : await rt.session.nextControl().catch(() => null);
+      const pp = paginationProbe(mode, advanceFailed, probe ? probe.text : null, pages);
+      rt.session.paginationPending = pp.pending;
+      if (pp.line) log.push(pp.line);
       return [
         `CSV ${i.csv}: +${totals.added} new rows this call, ${totals.dup + totals.empty} skipped (${totals.dup} duplicate / ${totals.empty} empty-key), ${totals.total} total rows in file.`,
         `Columns: ${names.join(", ")} (dedupe key: ${key})`,

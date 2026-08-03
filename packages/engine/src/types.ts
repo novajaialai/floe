@@ -26,6 +26,14 @@ export interface ChatResponse {
   text: string;
   toolCalls: ToolCall[];
   stopReason: string;
+  /**
+   * True when the provider exhausted its refusal re-sampling and the final
+   * sample still refused the protocol. Lets the agent loop treat the reply as
+   * a refusal even when the text phrasing evades the detector, and lets an
+   * exhausted refusal end the run as an honest failure — never a silent
+   * success (the text-only path used to be taken as a final summary).
+   */
+  refused?: boolean;
 }
 
 export interface Provider {

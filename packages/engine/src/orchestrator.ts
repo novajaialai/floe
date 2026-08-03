@@ -33,6 +33,8 @@ interface ExecutorOutcome {
   summary: string;
   /** Code-side truth about what the executor actually wrote. */
   files: string;
+  /** URLs that executor's browser actually opened — the only URLs it can cite. */
+  visited: string[];
 }
 
 /**
@@ -67,10 +69,11 @@ export function createSpawner(opts: SpawnerOptions): SpawnFn {
       `${outcomes.length} executor(s) finished (${outcomes.filter((o) => o.success).length} succeeded), max ${limit} at a time.`,
       ...outcomes.map(
         (o) =>
-          `\n--- ${o.name} [${o.model}] ${o.success ? "OK" : "INCOMPLETE"} — ${o.steps} steps, ${o.seconds}s (${o.startedAt} → ${o.endedAt})\n${o.summary.slice(0, 1500)}\n[verified] ${o.files}`,
+          `\n--- ${o.name} [${o.model}] ${o.success ? "OK" : "INCOMPLETE"} — ${o.steps} steps, ${o.seconds}s (${o.startedAt} → ${o.endedAt})\n${o.summary.slice(0, 1500)}\n[verified] ${o.files}\n[visited ${o.visited.length}] ${o.visited.join(", ").slice(0, 700) || "(none)"}`,
       ),
       `\nWorkspace files now present: ${files.join(", ") || "(none)"}`,
       `The [verified] lines are measured from disk — trust them over an executor's own summary. If an executor wrote nothing, re-spawn it with a more explicit task.`,
+      `The [visited] lines are the URLs each executor's browser actually opened: when you write the deliverable, cite ONLY URLs from these lists or from your own visited pages — an executor's notes may name URLs it never opened.`,
       `Read the files you need with workspace_read, then write the merged deliverable yourself.`,
     ].join("\n");
   };
@@ -88,7 +91,7 @@ async function runExecutor(name: string, spec: SpawnSpec, opts: SpawnerOptions):
   try {
     session = await opts.browser.createSession(name);
   } catch (err: any) {
-    return finish(name, model, false, 0, t0, startedAt, `Could not open a browser window: ${err.message ?? err}`, opts.workspace, before);
+    return finish(name, model, false, 0, t0, startedAt, `Could not open a browser window: ${err.message ?? err}`, opts.workspace, before, []);
   }
   try {
     const res = await runAgent(
@@ -103,9 +106,9 @@ async function runExecutor(name: string, spec: SpawnSpec, opts: SpawnerOptions):
         onEvent: opts.onEvent,
       },
     );
-    return finish(name, model, res.success, res.steps, t0, startedAt, res.summary, opts.workspace, before);
+    return finish(name, model, res.success, res.steps, t0, startedAt, res.summary, opts.workspace, before, session.visited());
   } catch (err: any) {
-    return finish(name, model, false, 0, t0, startedAt, `Executor crashed: ${err.message ?? err}`, opts.workspace, before);
+    return finish(name, model, false, 0, t0, startedAt, `Executor crashed: ${err.message ?? err}`, opts.workspace, before, session.visited());
   } finally {
     await opts.browser.closeSession(name).catch(() => {});
     emit({ type: "tool_result", step: 0, agent: name, detail: `executor finished after ${Math.round((Date.now() - t0) / 1000)}s` });
@@ -122,6 +125,7 @@ function finish(
   summary: string,
   workspace: Workspace,
   before: Map<string, number>,
+  visited: string[],
 ): ExecutorOutcome {
   const end = Date.now();
   return {
@@ -134,6 +138,7 @@ function finish(
     endedAt: new Date(end).toISOString().slice(11, 19),
     summary,
     files: describeWrites(name, workspace, before, t0),
+    visited,
   };
 }
 
@@ -209,7 +214,8 @@ Shared-workspace rules:
 - The task workspace (files addressed by bare name through your workspace tools) is shared with the other agents. Every file YOU create must start with "${name}-" (e.g. ${name}-results.csv). Never write to, overwrite or delete a file that does not start with "${name}-".
 - You cannot see or talk to the other agents. Do only your own assignment; do not attempt the whole task.
 - Report back by (1) writing your results to your file(s) and (2) calling done with a short summary that names the files you wrote and the number of records in them.
-- Before you call done you MUST have actually run the action that writes your file (paginate_extract for rows, workspace_write for prose) and then read it back with workspace_read to confirm it exists and holds the expected content. Never report a file you have not seen come back from workspace_read — your caller checks the disk and an unwritten file is a failed task.`;
+- Before you call done you MUST have actually run the action that writes your file (paginate_extract for rows, workspace_write for prose) and then read it back with workspace_read to confirm it exists and holds the expected content. Never report a file you have not seen come back from workspace_read — your caller checks the disk and an unwritten file is a failed task.
+- Citation rule: if your results name URLs, cite ONLY pages you actually opened in THIS browser session (they appear in your snapshots' URL lines). A URL you have not opened is ungrounded — writing it is fabrication, even if you know it exists. If you did not open a source, say so instead of citing it.`;
 }
 
 function uniqueName(requested: string | undefined, index: number, used: Set<string>): string {

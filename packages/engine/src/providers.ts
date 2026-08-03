@@ -231,7 +231,16 @@ export function isProtocolRefusal(text: string): boolean {
     /\bno (live |real |connected )?(browser|chromium)\b[^.]{0,30}(session|automation|tool)?/i.test(t) ||
     /\bisn'?t how i (actually )?operate\b/i.test(t) ||
     /\bfabricat\w+\b[^.]{0,30}\b(json|tool[- ]?calls?|browser actions?)\b/i.test(t) ||
-    /\b(that|this) (environment|toolset) (doesn'?t|does not) exist\b/i.test(t)
+    /\b(that|this) (environment|toolset) (doesn'?t|does not) exist\b/i.test(t) ||
+    // Session-10 verbatim (hn-jobs-sheet, 2026-08-03): a gateway backend that
+    // refused with novel phrasing the patterns above missed — "none of those
+    // tools are connected in this session", "not a live browser", "just be
+    // producing text describing actions I never took". The detector must
+    // catch the SHAPE (denial of the protocol/tooling), not just known words.
+    /\b(none of|no) (those|these|the|functioning|real|actual|live|connected|available) (browser|browser[- ]?tools?|chromium|tools?|capabilities?)\b[^.]{0,60}\b(connected|wired|backed|available|real|functioning)\b/i.test(t) ||
+    /\bnot (a )?(real|functioning|actual|live) (browser|browser[- ]?tool|chromium|tool|capabilit\w*)\b/i.test(t) ||
+    /\bnot backed by (a |any )?(real |actual |functioning )?(tool|browser)\b/i.test(t) ||
+    /\bproducing text describing actions? (i|we|it) never took\b/i.test(t)
   );
 }
 
@@ -244,8 +253,15 @@ export function isProtocolRefusal(text: string): boolean {
  * How many times one step is re-sampled while the backend refuses the protocol.
  * 3 attempts against a measured ~25% refusal rate leaves ~1.6% of steps
  * refusing — low enough that the agent-loop reframe is a genuine last resort.
+ * 4 attempts (the default) quarters that to ~0.4%; FLOE_RESAMPLE_ON_REFUSAL
+ * overrides (clamped to [1, 8]) for gateways with a worse refusal rate. Each
+ * extra attempt costs one provider call and only fires when a refusal already
+ * happened, so the tail is worth spending on.
  */
-const RESAMPLE_ON_REFUSAL = 3;
+const RESAMPLE_ON_REFUSAL = (() => {
+  const v = Number(process.env.FLOE_RESAMPLE_ON_REFUSAL);
+  return Number.isFinite(v) && v >= 1 ? Math.min(Math.round(v), 8) : 4;
+})();
 
 export class PromptToolsProvider implements Provider {
   private callSeq = 0;
@@ -309,7 +325,16 @@ Never write an ACTION RESULT yourself or assume what one will say — choose one
     }
     if (!parsed || typeof parsed.action !== "string") {
       // No parseable action — surface as plain text (agent treats as final).
-      return { text: res.text, toolCalls: [], stopReason: "end_turn" };
+      // If the last sample still refused, say so explicitly: the agent loop
+      // must treat an exhausted refusal as a refusal (honest failure), not as
+      // a final summary (silent success), even if the phrasing is novel
+      // enough to evade the detector regexes.
+      return {
+        text: res.text,
+        toolCalls: [],
+        stopReason: "end_turn",
+        refused: isProtocolRefusal(res.text),
+      };
     }
     return {
       text: String(parsed.thought ?? ""),
